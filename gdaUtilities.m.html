@@ -1006,8 +1006,11 @@ def setupGdaAttackParameters(cmdArgs):
         `cmdArgs` is the command line args list (`sys.argv`) <br/>
         `cmdArgs[1]` is either the name or the config file, or
         empty if the default config file name should be used. <br/>
-        Returns `None` if results for attack already posted <br/>
-        Else returns a data structure that can be used for class `gdaAttack()`
+        Returns a data structure that can be used for class `gdaAttack()` <br/>
+        Adds the following to the returned data structure (`par`) <br/>
+        `par['finished']`: `True` if attack previously completed. 
+        Else `False` <br/>
+        `par['resultsPath']`: Path to filename where results should be stored.
     """
 
     pp = pprint.PrettyPrinter(indent=4)
@@ -1046,18 +1049,19 @@ def setupGdaAttackParameters(cmdArgs):
         resultsDir = pm['resultsDir']
 
     resultsPath = resultsDir + "/" + baseName + ".json"
+    pm['resultsPath'] = resultsPath
+    pm['finished'] = False
     try:
         f = open(resultsPath, 'r')
     except:
-        # No prior results for this attack have been posted, so pass through
+        # No prior results for this attack have been posted
         pass
     else:
         # Prior results have been posted. Make sure they are complete.
         res = json.load(f)
         if 'finished' in res:
-            return None
+            pm['finished'] = True
 
-    pm['resultsPath'] = resultsPath
     return pm
 </code></pre>
   </div>
@@ -1080,8 +1084,11 @@ def setupGdaAttackParameters(cmdArgs):
 <p><code>cmdArgs</code> is the command line args list (<code>sys.argv</code>) <br/>
 <code>cmdArgs[1]</code> is either the name or the config file, or
 empty if the default config file name should be used. <br/>
-Returns <code>None</code> if results for attack already posted <br/>
-Else returns a data structure that can be used for class <code>gdaAttack()</code></p></div>
+Returns a data structure that can be used for class <code>gdaAttack()</code> <br/>
+Adds the following to the returned data structure (<code>par</code>) <br/>
+<code>par['finished']</code>: <code>True</code> if attack previously completed. 
+Else <code>False</code> <br/>
+<code>par['resultsPath']</code>: Path to filename where results should be stored.</p></div>
   <div class="source_cont">
   <p class="source_link"><a href="javascript:void(0);" onclick="toggle('source-gdaUtilities.setupGdaAttackParameters', this);">Show source &equiv;</a></p>
   <div id="source-gdaUtilities.setupGdaAttackParameters" class="source">
@@ -1091,8 +1098,11 @@ Else returns a data structure that can be used for class <code>gdaAttack()</code
         `cmdArgs` is the command line args list (`sys.argv`) <br/>
         `cmdArgs[1]` is either the name or the config file, or
         empty if the default config file name should be used. <br/>
-        Returns `None` if results for attack already posted <br/>
-        Else returns a data structure that can be used for class `gdaAttack()`
+        Returns a data structure that can be used for class `gdaAttack()` <br/>
+        Adds the following to the returned data structure (`par`) <br/>
+        `par['finished']`: `True` if attack previously completed. 
+        Else `False` <br/>
+        `par['resultsPath']`: Path to filename where results should be stored.
     """
 
     pp = pprint.PrettyPrinter(indent=4)
@@ -1131,18 +1141,19 @@ Else returns a data structure that can be used for class <code>gdaAttack()</code
         resultsDir = pm['resultsDir']
 
     resultsPath = resultsDir + "/" + baseName + ".json"
+    pm['resultsPath'] = resultsPath
+    pm['finished'] = False
     try:
         f = open(resultsPath, 'r')
     except:
-        # No prior results for this attack have been posted, so pass through
+        # No prior results for this attack have been posted
         pass
     else:
         # Prior results have been posted. Make sure they are complete.
         res = json.load(f)
         if 'finished' in res:
-            return None
+            pm['finished'] = True
 
-    pm['resultsPath'] = resultsPath
     return pm
 </code></pre>
   </div>
