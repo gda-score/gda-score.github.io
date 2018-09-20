@@ -1046,7 +1046,7 @@ import math
 class gdaScores:
     """Computes the final GDA Score from the scores returned by gdaAttack
 
-       See __init__ for input parameters.<br/>
+       See __init__ for input parameters. <br/>
        WARNING: this code is fragile, and can fail ungracefully."""
 
     # ar (AttackResults) contains the combined results from one or more
@@ -1078,7 +1078,7 @@ class gdaScores:
     def addResult(self, result):
         """ Adds first result or combines result with existing results
 
-            `result` is the data returned by `gdaAttack.getResults()`<br/>
+            `result` is the data returned by `gdaAttack.getResults()` <br/>
             Returns True if add succeeded, False otherwise"""
 
         # Check that results are meaningfully combinable
@@ -1110,9 +1110,9 @@ class gdaScores:
 
             By default, value will already be 1 (fully susceptible),
             so only need to call this if you wish to assign a different
-            value.<br/>
-            `column` is the name of the column being assigned to.<br/>
-            `susValue` can be any value between 0 and 1<br/>
+            value. <br/>
+            `column` is the name of the column being assigned to. <br/>
+            `susValue` can be any value between 0 and 1 <br/>
 
             returns False if failed to assign"""
         if column not in self._ar['col']:
@@ -1126,7 +1126,7 @@ class gdaScores:
         """ Returns all scores, both derived and attack generated
         
             `method` is the scoring algorithm (currently only one,
-            'mpi_sws_basic_v').<br/>
+            'mpi_sws_basic_v'). <br/>
             Derives a score from the `numColumns` columns with the
             weakest defense score. Uses all attacked columns if
             numColumns omitted. `numColumns=1` will give the worst-case
@@ -1278,7 +1278,7 @@ class gdaScores:
 class gdaAttack:
     """Manages a GDA Attack
 
-       See __init__ for input parameters.<br/>
+       See __init__ for input parameters. <br/>
        WARNING: this code is fragile, and can fail ungracefully, or
        just hang."""
 
@@ -1330,31 +1330,31 @@ class gdaAttack:
         """ Sets everything up with 'gdaAttack(params)'
 
             params is a dictionary containing the following
-            required parameters:<br/>
+            required parameters: <br/>
             `param['name']`: The name of the attack. Make it unique, because
-            the cache is discovered using this name.<br/>
+            the cache is discovered using this name. <br/>
             `param['rawDb']`: The label for the DB to be used as the
-            raw (non-anonymized) DB. From `param['dbConfig']`.<br/>
+            raw (non-anonymized) DB. From `param['dbConfig']`. <br/>
             `param['anonDb']`: The label for the DB to be used as the
-            anonymized) DB.<br/>
+            anonymized) DB. <br/>
             `param['criteria']`: The criteria by which the attack should
             determined to succeed or fail. Must be one of 'singlingOut',
-            'inference', or 'linkability'<br/>
-            Following are the optional parameters:<br/>
+            'inference', or 'linkability' <br/>
+            Following are the optional parameters: <br/>
             `param['table']`: The table to be attacked. Must be present
-            if the DB has more than one table.<br/>
+            if the DB has more than one table. <br/>
             `param['flushCache']`: Set to true if you want the cache of
             query answers from a previous run flushed. The purpose of the
             cache is to save the work from an aborted attack, which can be
-            substantial because attacks can have hundreds of queries.<br/>
+            substantial because attacks can have hundreds of queries. <br/>
             `param['locCacheDir']`: The directory holding the cache DBs.
-            Default 'attackDBs'.<br/>
+            Default 'attackDBs'. <br/>
             `param['numRawDbThreads']`: The number of parallel queries
-            that can be made to the raw DB. Default 3.<br/>
+            that can be made to the raw DB. Default 3. <br/>
             `param['numAnonDbThreads']`: The number of parallel queries
-            that can be made to the anon DB. Default 3.<br/>
+            that can be made to the anon DB. Default 3. <br/>
             `param['dbConfig']`: The path to the json DB configureation
-            file.<br/>
+            file. <br/>
             `param['verbose']`: Set to True for verbose output.
         """
 
@@ -1379,7 +1379,7 @@ class gdaAttack:
         if len(self._p['table']) == 0:
             tables = self.getTableNames()
             if len(tables) != 1:
-                print("Error: gdaAttack() must include table name if " +
+                print("Error: gdaAttack(): Must include table name if " +
                         "there is more than one table in database")
                 sys.exit()
             self._p['table'] = tables[0]
@@ -1465,12 +1465,12 @@ class gdaAttack:
         Making a claim results in a query to the raw database, to check
         the correctness of the claim. Multiple calls to this method will
         cause the corresponding queries to be queued up, so `askClaim()`
-        returns immediately. `getClaim()` harvests one claim result.<br/>
+        returns immediately. `getClaim()` harvests one claim result. <br/>
         Set `claim=False` if this claim should not be applied to the
         confidence improvement score. In this case, the probability score
-        will instead be reduced accordingly.<br/>
+        will instead be reduced accordingly. <br/>
         When the attack criteria is 'singlingOut' or 'inference', the `spec`
-        is formatted as follows:<br/>
+        is formatted as follows: <br/>
 
             `{'uid':'uidCol',
              `'known':[{'col':'colName','val':'value'},...],`
@@ -1478,12 +1478,12 @@ class gdaAttack:
             `}`
 
         `spec['known']` are the columns and values the attacker already knows
-        (i.e. with prior knowledge)<br/>
+        (i.e. with prior knowledge) <br/>
         `spec['guess']` are the columns and values the attacker doesn't know,
-        but rather is trying to predict.<br/>
-        `spec['uid']` is the name of the UID column.<br/>
-        * Answers are cached<br/>
-        * Returns immediately"""
+        but rather is trying to predict. <br/>
+        `spec['uid']` is the name of the UID column. <br/>
+        Answers are cached <br/>
+        Returns immediately"""
         if self._vb: print(f"Calling {__name__}.askClaim with spec '{spec}', count {self._claimCounter}")
         self._claimCounter += 1
         sql = self._makeSqlFromSpec(spec)
@@ -1507,18 +1507,18 @@ class gdaAttack:
             of one finished claim, and the claim's input parameters.
             Note that the order in which results are returned by
             `getClaim()` are not necessarily the same order they were
-            inserted by `askClaim()`.<br/>
-            Assuming `result` is returned:<br/>
+            inserted by `askClaim()`. <br/>
+            Assuming `result` is returned: <br/>
             `result['claim']` is the value supplied in the corresponding
-            `askClaim()` call<br/>
+            `askClaim()` call <br/>
             `result['spec']` is a copy of the `spec` supplied in the
-            corresponding `askClaim()` call.<br/>
+            corresponding `askClaim()` call. <br/>
             `result['queries']` is a list of the queries generated in order to
-            validate the claim.<br/>
+            validate the claim. <br/>
             `result['answers']` are the answers to the queries in
-            `result['queries'].<br/>
+            `result['queries']`. <br/>
             `result['claimResult']` is 'Correct' or 'Incorrect', depending
-            on whether the claim satisfies the critieria or not.<br/>
+            on whether the claim satisfies the critieria or not. <br/>
             `result['stillToCome']` is a counter showing how many more
             claims are still queued. When `stillToCome` is 0, then all
             claims submitted by `askClaim()` have been returned."""
@@ -1588,7 +1588,7 @@ class gdaAttack:
     def askAttack(self,query,cache=1):
         """ Generate and queue up an attack query for database.
 
-            `query` is a dictionary with (currently) one value:<br/>
+            `query` is a dictionary with (currently) one value: <br/>
             `query['sql'] contains the SQL query."""
         self._attackCounter += 1
         if self._vb: print(f"Calling {__name__}.askAttack with query '{query}', count {self._attackCounter}")
@@ -1605,15 +1605,15 @@ class gdaAttack:
         
             Blocks until the result is available. Note that the order
             in which results are received is not necesarily the order
-            in which `askAttack()` calls were made.<br/>
-            Assuming `result` is returned:<br/>
+            in which `askAttack()` calls were made. <br/>
+            Assuming `result` is returned: <br/>
             `result['answer']` is the answer returned by the DB. The
-            format is:<br/>
-                `[(C1,C2...,Cn),(C1,C2...,Cn), ... (C1,C2...,Cn)]`<br/>
+            format is: <br/>
+                `[(C1,C2...,Cn),(C1,C2...,Cn), ... (C1,C2...,Cn)]` <br/>
             where C1 is the first element of the `SELECT`, C2 the second
-            element, etc.<br/>
+            element, etc. <br/>
             `result['cells']` is the number of cells returned in the answer
-            (used by `gdaAttack()` to compute total attack cells)<br/>
+            (used by `gdaAttack()` to compute total attack cells) <br/>
             `result['query']['sql']` is the query from the corresponding
             `askAttack()`."""
 
@@ -1637,7 +1637,7 @@ class gdaAttack:
         """ Generate and queue up a prior knowledge query for database
 
             The class keeps track of how many prior knowledge cells were
-            returned and uses this to compute a score.<br/>
+            returned and uses this to compute a score. <br/>
             Input parameters formatted the same as with `askAttack()`"""
 
         self._knowledgeCounter += 1
@@ -1655,7 +1655,7 @@ class gdaAttack:
         
             Blocks until the result is available. Note that the order
             in which results are received is not necesarily the order
-            in which `askKnowledge()` calls were made.<br/>
+            in which `askKnowledge()` calls were made. <br/>
             Return parameter formatted the same as with `getAttack()`"""
 
         if self._vb: print(f"Calling {__name__}.getKnowledge")
@@ -1678,7 +1678,7 @@ class gdaAttack:
         """ Generate and queue up an exploritory query for database
 
             No score book-keeping is done here. An analyst may make
-            any number of queries without impacting the GDA score.<br/>
+            any number of queries without impacting the GDA score. <br/>
             Input parameters formatted the same as with `askAttack()`"""
 
         self._exploreCounter += 1
@@ -1699,7 +1699,7 @@ class gdaAttack:
         
             Blocks until the result is available. Note that the order
             in which results are received is not necesarily the order
-            in which `askExplore()` calls were made.<br/>
+            in which `askExplore()` calls were made. <br/>
             Return parameter formatted the same as with `getAttack()`"""
         if self._vb: print(f"Calling {__name__}.getExplore")
         if self._exploreCounter == 0:
@@ -1736,7 +1736,7 @@ class gdaAttack:
     def getColNamesAndTypes(self,dbType='rawDb',tableName=''):
         """Return raw database column names and types (or None if error)
 
-        dbType is one of 'rawDb' or 'anonDb'<br/>
+        dbType is one of 'rawDb' or 'anonDb' <br/>
         return format: [(col,type),(col,type),...]"""
         if len(tableName) == 0:
             # caller didn't supply a table name, so get it from the
@@ -1773,7 +1773,7 @@ class gdaAttack:
     def getTableNames(self,dbType='rawDb'):
         """Return database table names
         
-        dbType is one of 'rawDb' or 'anonDb'<br/>
+        dbType is one of 'rawDb' or 'anonDb' <br/>
         Table names returned as list, unless error then return None"""
 
         # Establish connection to database
@@ -2222,7 +2222,7 @@ class gdaAttack:
       
   
     <div class="desc"><p>Manages a GDA Attack</p>
-<p>See <strong>init</strong> for input parameters.<br/>
+<p>See <strong>init</strong> for input parameters. <br/>
 WARNING: this code is fragile, and can fail ungracefully, or
 just hang.</p></div>
   <div class="source_cont">
@@ -2231,7 +2231,7 @@ just hang.</p></div>
     <pre><code>class gdaAttack:
     """Manages a GDA Attack
 
-       See __init__ for input parameters.<br/>
+       See __init__ for input parameters. <br/>
        WARNING: this code is fragile, and can fail ungracefully, or
        just hang."""
 
@@ -2283,31 +2283,31 @@ just hang.</p></div>
         """ Sets everything up with 'gdaAttack(params)'
 
             params is a dictionary containing the following
-            required parameters:<br/>
+            required parameters: <br/>
             `param['name']`: The name of the attack. Make it unique, because
-            the cache is discovered using this name.<br/>
+            the cache is discovered using this name. <br/>
             `param['rawDb']`: The label for the DB to be used as the
-            raw (non-anonymized) DB. From `param['dbConfig']`.<br/>
+            raw (non-anonymized) DB. From `param['dbConfig']`. <br/>
             `param['anonDb']`: The label for the DB to be used as the
-            anonymized) DB.<br/>
+            anonymized) DB. <br/>
             `param['criteria']`: The criteria by which the attack should
             determined to succeed or fail. Must be one of 'singlingOut',
-            'inference', or 'linkability'<br/>
-            Following are the optional parameters:<br/>
+            'inference', or 'linkability' <br/>
+            Following are the optional parameters: <br/>
             `param['table']`: The table to be attacked. Must be present
-            if the DB has more than one table.<br/>
+            if the DB has more than one table. <br/>
             `param['flushCache']`: Set to true if you want the cache of
             query answers from a previous run flushed. The purpose of the
             cache is to save the work from an aborted attack, which can be
-            substantial because attacks can have hundreds of queries.<br/>
+            substantial because attacks can have hundreds of queries. <br/>
             `param['locCacheDir']`: The directory holding the cache DBs.
-            Default 'attackDBs'.<br/>
+            Default 'attackDBs'. <br/>
             `param['numRawDbThreads']`: The number of parallel queries
-            that can be made to the raw DB. Default 3.<br/>
+            that can be made to the raw DB. Default 3. <br/>
             `param['numAnonDbThreads']`: The number of parallel queries
-            that can be made to the anon DB. Default 3.<br/>
+            that can be made to the anon DB. Default 3. <br/>
             `param['dbConfig']`: The path to the json DB configureation
-            file.<br/>
+            file. <br/>
             `param['verbose']`: Set to True for verbose output.
         """
 
@@ -2332,7 +2332,7 @@ just hang.</p></div>
         if len(self._p['table']) == 0:
             tables = self.getTableNames()
             if len(tables) != 1:
-                print("Error: gdaAttack() must include table name if " +
+                print("Error: gdaAttack(): Must include table name if " +
                         "there is more than one table in database")
                 sys.exit()
             self._p['table'] = tables[0]
@@ -2418,12 +2418,12 @@ just hang.</p></div>
         Making a claim results in a query to the raw database, to check
         the correctness of the claim. Multiple calls to this method will
         cause the corresponding queries to be queued up, so `askClaim()`
-        returns immediately. `getClaim()` harvests one claim result.<br/>
+        returns immediately. `getClaim()` harvests one claim result. <br/>
         Set `claim=False` if this claim should not be applied to the
         confidence improvement score. In this case, the probability score
-        will instead be reduced accordingly.<br/>
+        will instead be reduced accordingly. <br/>
         When the attack criteria is 'singlingOut' or 'inference', the `spec`
-        is formatted as follows:<br/>
+        is formatted as follows: <br/>
 
             `{'uid':'uidCol',
              `'known':[{'col':'colName','val':'value'},...],`
@@ -2431,12 +2431,12 @@ just hang.</p></div>
             `}`
 
         `spec['known']` are the columns and values the attacker already knows
-        (i.e. with prior knowledge)<br/>
+        (i.e. with prior knowledge) <br/>
         `spec['guess']` are the columns and values the attacker doesn't know,
-        but rather is trying to predict.<br/>
-        `spec['uid']` is the name of the UID column.<br/>
-        * Answers are cached<br/>
-        * Returns immediately"""
+        but rather is trying to predict. <br/>
+        `spec['uid']` is the name of the UID column. <br/>
+        Answers are cached <br/>
+        Returns immediately"""
         if self._vb: print(f"Calling {__name__}.askClaim with spec '{spec}', count {self._claimCounter}")
         self._claimCounter += 1
         sql = self._makeSqlFromSpec(spec)
@@ -2460,18 +2460,18 @@ just hang.</p></div>
             of one finished claim, and the claim's input parameters.
             Note that the order in which results are returned by
             `getClaim()` are not necessarily the same order they were
-            inserted by `askClaim()`.<br/>
-            Assuming `result` is returned:<br/>
+            inserted by `askClaim()`. <br/>
+            Assuming `result` is returned: <br/>
             `result['claim']` is the value supplied in the corresponding
-            `askClaim()` call<br/>
+            `askClaim()` call <br/>
             `result['spec']` is a copy of the `spec` supplied in the
-            corresponding `askClaim()` call.<br/>
+            corresponding `askClaim()` call. <br/>
             `result['queries']` is a list of the queries generated in order to
-            validate the claim.<br/>
+            validate the claim. <br/>
             `result['answers']` are the answers to the queries in
-            `result['queries'].<br/>
+            `result['queries']`. <br/>
             `result['claimResult']` is 'Correct' or 'Incorrect', depending
-            on whether the claim satisfies the critieria or not.<br/>
+            on whether the claim satisfies the critieria or not. <br/>
             `result['stillToCome']` is a counter showing how many more
             claims are still queued. When `stillToCome` is 0, then all
             claims submitted by `askClaim()` have been returned."""
@@ -2541,7 +2541,7 @@ just hang.</p></div>
     def askAttack(self,query,cache=1):
         """ Generate and queue up an attack query for database.
 
-            `query` is a dictionary with (currently) one value:<br/>
+            `query` is a dictionary with (currently) one value: <br/>
             `query['sql'] contains the SQL query."""
         self._attackCounter += 1
         if self._vb: print(f"Calling {__name__}.askAttack with query '{query}', count {self._attackCounter}")
@@ -2558,15 +2558,15 @@ just hang.</p></div>
         
             Blocks until the result is available. Note that the order
             in which results are received is not necesarily the order
-            in which `askAttack()` calls were made.<br/>
-            Assuming `result` is returned:<br/>
+            in which `askAttack()` calls were made. <br/>
+            Assuming `result` is returned: <br/>
             `result['answer']` is the answer returned by the DB. The
-            format is:<br/>
-                `[(C1,C2...,Cn),(C1,C2...,Cn), ... (C1,C2...,Cn)]`<br/>
+            format is: <br/>
+                `[(C1,C2...,Cn),(C1,C2...,Cn), ... (C1,C2...,Cn)]` <br/>
             where C1 is the first element of the `SELECT`, C2 the second
-            element, etc.<br/>
+            element, etc. <br/>
             `result['cells']` is the number of cells returned in the answer
-            (used by `gdaAttack()` to compute total attack cells)<br/>
+            (used by `gdaAttack()` to compute total attack cells) <br/>
             `result['query']['sql']` is the query from the corresponding
             `askAttack()`."""
 
@@ -2590,7 +2590,7 @@ just hang.</p></div>
         """ Generate and queue up a prior knowledge query for database
 
             The class keeps track of how many prior knowledge cells were
-            returned and uses this to compute a score.<br/>
+            returned and uses this to compute a score. <br/>
             Input parameters formatted the same as with `askAttack()`"""
 
         self._knowledgeCounter += 1
@@ -2608,7 +2608,7 @@ just hang.</p></div>
         
             Blocks until the result is available. Note that the order
             in which results are received is not necesarily the order
-            in which `askKnowledge()` calls were made.<br/>
+            in which `askKnowledge()` calls were made. <br/>
             Return parameter formatted the same as with `getAttack()`"""
 
         if self._vb: print(f"Calling {__name__}.getKnowledge")
@@ -2631,7 +2631,7 @@ just hang.</p></div>
         """ Generate and queue up an exploritory query for database
 
             No score book-keeping is done here. An analyst may make
-            any number of queries without impacting the GDA score.<br/>
+            any number of queries without impacting the GDA score. <br/>
             Input parameters formatted the same as with `askAttack()`"""
 
         self._exploreCounter += 1
@@ -2652,7 +2652,7 @@ just hang.</p></div>
         
             Blocks until the result is available. Note that the order
             in which results are received is not necesarily the order
-            in which `askExplore()` calls were made.<br/>
+            in which `askExplore()` calls were made. <br/>
             Return parameter formatted the same as with `getAttack()`"""
         if self._vb: print(f"Calling {__name__}.getExplore")
         if self._exploreCounter == 0:
@@ -2689,7 +2689,7 @@ just hang.</p></div>
     def getColNamesAndTypes(self,dbType='rawDb',tableName=''):
         """Return raw database column names and types (or None if error)
 
-        dbType is one of 'rawDb' or 'anonDb'<br/>
+        dbType is one of 'rawDb' or 'anonDb' <br/>
         return format: [(col,type),(col,type),...]"""
         if len(tableName) == 0:
             # caller didn't supply a table name, so get it from the
@@ -2726,7 +2726,7 @@ just hang.</p></div>
     def getTableNames(self,dbType='rawDb'):
         """Return database table names
         
-        dbType is one of 'rawDb' or 'anonDb'<br/>
+        dbType is one of 'rawDb' or 'anonDb' <br/>
         Table names returned as list, unless error then return None"""
 
         # Establish connection to database
@@ -3183,31 +3183,31 @@ just hang.</p></div>
   
     <div class="desc"><p>Sets everything up with 'gdaAttack(params)'</p>
 <p>params is a dictionary containing the following
-required parameters:<br/>
+required parameters: <br/>
 <code>param['name']</code>: The name of the attack. Make it unique, because
-the cache is discovered using this name.<br/>
+the cache is discovered using this name. <br/>
 <code>param['rawDb']</code>: The label for the DB to be used as the
-raw (non-anonymized) DB. From <code>param['dbConfig']</code>.<br/>
+raw (non-anonymized) DB. From <code>param['dbConfig']</code>. <br/>
 <code>param['anonDb']</code>: The label for the DB to be used as the
-anonymized) DB.<br/>
+anonymized) DB. <br/>
 <code>param['criteria']</code>: The criteria by which the attack should
 determined to succeed or fail. Must be one of 'singlingOut',
-'inference', or 'linkability'<br/>
-Following are the optional parameters:<br/>
+'inference', or 'linkability' <br/>
+Following are the optional parameters: <br/>
 <code>param['table']</code>: The table to be attacked. Must be present
-if the DB has more than one table.<br/>
+if the DB has more than one table. <br/>
 <code>param['flushCache']</code>: Set to true if you want the cache of
 query answers from a previous run flushed. The purpose of the
 cache is to save the work from an aborted attack, which can be
-substantial because attacks can have hundreds of queries.<br/>
+substantial because attacks can have hundreds of queries. <br/>
 <code>param['locCacheDir']</code>: The directory holding the cache DBs.
-Default 'attackDBs'.<br/>
+Default 'attackDBs'. <br/>
 <code>param['numRawDbThreads']</code>: The number of parallel queries
-that can be made to the raw DB. Default 3.<br/>
+that can be made to the raw DB. Default 3. <br/>
 <code>param['numAnonDbThreads']</code>: The number of parallel queries
-that can be made to the anon DB. Default 3.<br/>
+that can be made to the anon DB. Default 3. <br/>
 <code>param['dbConfig']</code>: The path to the json DB configureation
-file.<br/>
+file. <br/>
 <code>param['verbose']</code>: Set to True for verbose output.</p></div>
   <div class="source_cont">
   <p class="source_link"><a href="javascript:void(0);" onclick="toggle('source-gdaScore.gdaAttack.__init__', this);">Show source &equiv;</a></p>
@@ -3215,31 +3215,31 @@ file.<br/>
     <pre><code>def __init__(self,params):
     """ Sets everything up with 'gdaAttack(params)'
         params is a dictionary containing the following
-        required parameters:<br/>
+        required parameters: <br/>
         `param['name']`: The name of the attack. Make it unique, because
-        the cache is discovered using this name.<br/>
+        the cache is discovered using this name. <br/>
         `param['rawDb']`: The label for the DB to be used as the
-        raw (non-anonymized) DB. From `param['dbConfig']`.<br/>
+        raw (non-anonymized) DB. From `param['dbConfig']`. <br/>
         `param['anonDb']`: The label for the DB to be used as the
-        anonymized) DB.<br/>
+        anonymized) DB. <br/>
         `param['criteria']`: The criteria by which the attack should
         determined to succeed or fail. Must be one of 'singlingOut',
-        'inference', or 'linkability'<br/>
-        Following are the optional parameters:<br/>
+        'inference', or 'linkability' <br/>
+        Following are the optional parameters: <br/>
         `param['table']`: The table to be attacked. Must be present
-        if the DB has more than one table.<br/>
+        if the DB has more than one table. <br/>
         `param['flushCache']`: Set to true if you want the cache of
         query answers from a previous run flushed. The purpose of the
         cache is to save the work from an aborted attack, which can be
-        substantial because attacks can have hundreds of queries.<br/>
+        substantial because attacks can have hundreds of queries. <br/>
         `param['locCacheDir']`: The directory holding the cache DBs.
-        Default 'attackDBs'.<br/>
+        Default 'attackDBs'. <br/>
         `param['numRawDbThreads']`: The number of parallel queries
-        that can be made to the raw DB. Default 3.<br/>
+        that can be made to the raw DB. Default 3. <br/>
         `param['numAnonDbThreads']`: The number of parallel queries
-        that can be made to the anon DB. Default 3.<br/>
+        that can be made to the anon DB. Default 3. <br/>
         `param['dbConfig']`: The path to the json DB configureation
-        file.<br/>
+        file. <br/>
         `param['verbose']`: Set to True for verbose output.
     """
     if self._vb: print(f"Calling {__name__}.init")
@@ -3262,7 +3262,7 @@ file.<br/>
     if len(self._p['table']) == 0:
         tables = self.getTableNames()
         if len(tables) != 1:
-            print("Error: gdaAttack() must include table name if " +
+            print("Error: gdaAttack(): Must include table name if " +
                     "there is more than one table in database")
             sys.exit()
         self._p['table'] = tables[0]
@@ -3297,14 +3297,14 @@ file.<br/>
     
   
     <div class="desc"><p>Generate and queue up an attack query for database.</p>
-<p><code>query</code> is a dictionary with (currently) one value:<br/>
+<p><code>query</code> is a dictionary with (currently) one value: <br/>
 `query['sql'] contains the SQL query.</p></div>
   <div class="source_cont">
   <p class="source_link"><a href="javascript:void(0);" onclick="toggle('source-gdaScore.gdaAttack.askAttack', this);">Show source &equiv;</a></p>
   <div id="source-gdaScore.gdaAttack.askAttack" class="source">
     <pre><code>def askAttack(self,query,cache=1):
     """ Generate and queue up an attack query for database.
-        `query` is a dictionary with (currently) one value:<br/>
+        `query` is a dictionary with (currently) one value: <br/>
         `query['sql'] contains the SQL query."""
     self._attackCounter += 1
     if self._vb: print(f"Calling {__name__}.askAttack with query '{query}', count {self._attackCounter}")
@@ -3334,24 +3334,24 @@ file.<br/>
 <p>Making a claim results in a query to the raw database, to check
 the correctness of the claim. Multiple calls to this method will
 cause the corresponding queries to be queued up, so <code>askClaim()</code>
-returns immediately. <code>getClaim()</code> harvests one claim result.<br/>
+returns immediately. <code>getClaim()</code> harvests one claim result. <br/>
 Set <code>claim=False</code> if this claim should not be applied to the
 confidence improvement score. In this case, the probability score
-will instead be reduced accordingly.<br/>
+will instead be reduced accordingly. <br/>
 When the attack criteria is 'singlingOut' or 'inference', the <code>spec</code>
-is formatted as follows:<br/></p>
+is formatted as follows: <br/></p>
 <pre><code>`{'uid':'uidCol',
  `'known':[{'col':'colName','val':'value'},...],`
  `'guess':[{'col':'colName','val':'value'},...],`
 `}`
 </code></pre>
 <p><code>spec['known']</code> are the columns and values the attacker already knows
-(i.e. with prior knowledge)<br/>
+(i.e. with prior knowledge) <br/>
 <code>spec['guess']</code> are the columns and values the attacker doesn't know,
-but rather is trying to predict.<br/>
-<code>spec['uid']</code> is the name of the UID column.<br/>
-<em> Answers are cached<br/>
-</em> Returns immediately</p></div>
+but rather is trying to predict. <br/>
+<code>spec['uid']</code> is the name of the UID column. <br/>
+Answers are cached <br/>
+Returns immediately</p></div>
   <div class="source_cont">
   <p class="source_link"><a href="javascript:void(0);" onclick="toggle('source-gdaScore.gdaAttack.askClaim', this);">Show source &equiv;</a></p>
   <div id="source-gdaScore.gdaAttack.askClaim" class="source">
@@ -3360,23 +3360,23 @@ but rather is trying to predict.<br/>
     Making a claim results in a query to the raw database, to check
     the correctness of the claim. Multiple calls to this method will
     cause the corresponding queries to be queued up, so `askClaim()`
-    returns immediately. `getClaim()` harvests one claim result.<br/>
+    returns immediately. `getClaim()` harvests one claim result. <br/>
     Set `claim=False` if this claim should not be applied to the
     confidence improvement score. In this case, the probability score
-    will instead be reduced accordingly.<br/>
+    will instead be reduced accordingly. <br/>
     When the attack criteria is 'singlingOut' or 'inference', the `spec`
-    is formatted as follows:<br/>
+    is formatted as follows: <br/>
         `{'uid':'uidCol',
          `'known':[{'col':'colName','val':'value'},...],`
          `'guess':[{'col':'colName','val':'value'},...],`
         `}`
     `spec['known']` are the columns and values the attacker already knows
-    (i.e. with prior knowledge)<br/>
+    (i.e. with prior knowledge) <br/>
     `spec['guess']` are the columns and values the attacker doesn't know,
-    but rather is trying to predict.<br/>
-    `spec['uid']` is the name of the UID column.<br/>
-    * Answers are cached<br/>
-    * Returns immediately"""
+    but rather is trying to predict. <br/>
+    `spec['uid']` is the name of the UID column. <br/>
+    Answers are cached <br/>
+    Returns immediately"""
     if self._vb: print(f"Calling {__name__}.askClaim with spec '{spec}', count {self._claimCounter}")
     self._claimCounter += 1
     sql = self._makeSqlFromSpec(spec)
@@ -3409,7 +3409,7 @@ but rather is trying to predict.<br/>
   
     <div class="desc"><p>Generate and queue up an exploritory query for database</p>
 <p>No score book-keeping is done here. An analyst may make
-any number of queries without impacting the GDA score.<br/>
+any number of queries without impacting the GDA score. <br/>
 Input parameters formatted the same as with <code>askAttack()</code></p></div>
   <div class="source_cont">
   <p class="source_link"><a href="javascript:void(0);" onclick="toggle('source-gdaScore.gdaAttack.askExplore', this);">Show source &equiv;</a></p>
@@ -3417,7 +3417,7 @@ Input parameters formatted the same as with <code>askAttack()</code></p></div>
     <pre><code>def askExplore(self,query,cache=0):
     """ Generate and queue up an exploritory query for database
         No score book-keeping is done here. An analyst may make
-        any number of queries without impacting the GDA score.<br/>
+        any number of queries without impacting the GDA score. <br/>
         Input parameters formatted the same as with `askAttack()`"""
     self._exploreCounter += 1
     if self._vb: print(f"Calling {__name__}.askExplore with query '{query}', count {self._exploreCounter}")
@@ -3448,7 +3448,7 @@ Input parameters formatted the same as with <code>askAttack()</code></p></div>
   
     <div class="desc"><p>Generate and queue up a prior knowledge query for database</p>
 <p>The class keeps track of how many prior knowledge cells were
-returned and uses this to compute a score.<br/>
+returned and uses this to compute a score. <br/>
 Input parameters formatted the same as with <code>askAttack()</code></p></div>
   <div class="source_cont">
   <p class="source_link"><a href="javascript:void(0);" onclick="toggle('source-gdaScore.gdaAttack.askKnowledge', this);">Show source &equiv;</a></p>
@@ -3456,7 +3456,7 @@ Input parameters formatted the same as with <code>askAttack()</code></p></div>
     <pre><code>def askKnowledge(self,query,cache=0):
     """ Generate and queue up a prior knowledge query for database
         The class keeps track of how many prior knowledge cells were
-        returned and uses this to compute a score.<br/>
+        returned and uses this to compute a score. <br/>
         Input parameters formatted the same as with `askAttack()`"""
     self._knowledgeCounter += 1
     if self._vb: print(f"Calling {__name__}.askKnowledge with query '{query}', count {self._knowledgeCounter}")
@@ -3532,15 +3532,15 @@ if that isn't what you want.</p></div>
     <div class="desc"><p>Returns the result of one askAttack() call</p>
 <p>Blocks until the result is available. Note that the order
 in which results are received is not necesarily the order
-in which <code>askAttack()</code> calls were made.<br/>
-Assuming <code>result</code> is returned:<br/>
+in which <code>askAttack()</code> calls were made. <br/>
+Assuming <code>result</code> is returned: <br/>
 <code>result['answer']</code> is the answer returned by the DB. The
-format is:<br/>
-    <code>[(C1,C2...,Cn),(C1,C2...,Cn), ... (C1,C2...,Cn)]</code><br/>
+format is: <br/>
+    <code>[(C1,C2...,Cn),(C1,C2...,Cn), ... (C1,C2...,Cn)]</code> <br/>
 where C1 is the first element of the <code>SELECT</code>, C2 the second
-element, etc.<br/>
+element, etc. <br/>
 <code>result['cells']</code> is the number of cells returned in the answer
-(used by <code>gdaAttack()</code> to compute total attack cells)<br/>
+(used by <code>gdaAttack()</code> to compute total attack cells) <br/>
 <code>result['query']['sql']</code> is the query from the corresponding
 <code>askAttack()</code>.</p></div>
   <div class="source_cont">
@@ -3551,15 +3551,15 @@ element, etc.<br/>
     
         Blocks until the result is available. Note that the order
         in which results are received is not necesarily the order
-        in which `askAttack()` calls were made.<br/>
-        Assuming `result` is returned:<br/>
+        in which `askAttack()` calls were made. <br/>
+        Assuming `result` is returned: <br/>
         `result['answer']` is the answer returned by the DB. The
-        format is:<br/>
-            `[(C1,C2...,Cn),(C1,C2...,Cn), ... (C1,C2...,Cn)]`<br/>
+        format is: <br/>
+            `[(C1,C2...,Cn),(C1,C2...,Cn), ... (C1,C2...,Cn)]` <br/>
         where C1 is the first element of the `SELECT`, C2 the second
-        element, etc.<br/>
+        element, etc. <br/>
         `result['cells']` is the number of cells returned in the answer
-        (used by `gdaAttack()` to compute total attack cells)<br/>
+        (used by `gdaAttack()` to compute total attack cells) <br/>
         `result['query']['sql']` is the query from the corresponding
         `askAttack()`."""
     if self._vb: print(f"Calling {__name__}.getAttack")
@@ -3597,19 +3597,21 @@ element, etc.<br/>
 of one finished claim, and the claim's input parameters.
 Note that the order in which results are returned by
 <code>getClaim()</code> are not necessarily the same order they were
-inserted by <code>askClaim()</code>.<br/>
-Assuming <code>result</code> is returned:<br/>
+inserted by <code>askClaim()</code>. <br/>
+Assuming <code>result</code> is returned: <br/>
 <code>result['claim']</code> is the value supplied in the corresponding
-<code>askClaim()</code> call<br/>
+<code>askClaim()</code> call <br/>
 <code>result['spec']</code> is a copy of the <code>spec</code> supplied in the
-corresponding <code>askClaim()</code> call.<br/>
+corresponding <code>askClaim()</code> call. <br/>
 <code>result['queries']</code> is a list of the queries generated in order to
-validate the claim.<br/>
+validate the claim. <br/>
 <code>result['answers']</code> are the answers to the queries in
-<code>result['queries'].&lt;br/&gt;</code>result['claimResult']<code>is 'Correct' or 'Incorrect', depending
-on whether the claim satisfies the critieria or not.&lt;br/&gt;</code>result['stillToCome']<code>is a counter showing how many more
-claims are still queued. When</code>stillToCome<code>is 0, then all
-claims submitted by</code>askClaim()` have been returned.</p></div>
+<code>result['queries']</code>. <br/>
+<code>result['claimResult']</code> is 'Correct' or 'Incorrect', depending
+on whether the claim satisfies the critieria or not. <br/>
+<code>result['stillToCome']</code> is a counter showing how many more
+claims are still queued. When <code>stillToCome</code> is 0, then all
+claims submitted by <code>askClaim()</code> have been returned.</p></div>
   <div class="source_cont">
   <p class="source_link"><a href="javascript:void(0);" onclick="toggle('source-gdaScore.gdaAttack.getClaim', this);">Show source &equiv;</a></p>
   <div id="source-gdaScore.gdaAttack.getClaim" class="source">
@@ -3620,18 +3622,18 @@ claims submitted by</code>askClaim()` have been returned.</p></div>
         of one finished claim, and the claim's input parameters.
         Note that the order in which results are returned by
         `getClaim()` are not necessarily the same order they were
-        inserted by `askClaim()`.<br/>
-        Assuming `result` is returned:<br/>
+        inserted by `askClaim()`. <br/>
+        Assuming `result` is returned: <br/>
         `result['claim']` is the value supplied in the corresponding
-        `askClaim()` call<br/>
+        `askClaim()` call <br/>
         `result['spec']` is a copy of the `spec` supplied in the
-        corresponding `askClaim()` call.<br/>
+        corresponding `askClaim()` call. <br/>
         `result['queries']` is a list of the queries generated in order to
-        validate the claim.<br/>
+        validate the claim. <br/>
         `result['answers']` are the answers to the queries in
-        `result['queries'].<br/>
+        `result['queries']`. <br/>
         `result['claimResult']` is 'Correct' or 'Incorrect', depending
-        on whether the claim satisfies the critieria or not.<br/>
+        on whether the claim satisfies the critieria or not. <br/>
         `result['stillToCome']` is a counter showing how many more
         claims are still queued. When `stillToCome` is 0, then all
         claims submitted by `askClaim()` have been returned."""
@@ -3746,14 +3748,14 @@ claims submitted by</code>askClaim()` have been returned.</p></div>
     
   
     <div class="desc"><p>Return raw database column names and types (or None if error)</p>
-<p>dbType is one of 'rawDb' or 'anonDb'<br/>
+<p>dbType is one of 'rawDb' or 'anonDb' <br/>
 return format: [(col,type),(col,type),...]</p></div>
   <div class="source_cont">
   <p class="source_link"><a href="javascript:void(0);" onclick="toggle('source-gdaScore.gdaAttack.getColNamesAndTypes', this);">Show source &equiv;</a></p>
   <div id="source-gdaScore.gdaAttack.getColNamesAndTypes" class="source">
     <pre><code>def getColNamesAndTypes(self,dbType='rawDb',tableName=''):
     """Return raw database column names and types (or None if error)
-    dbType is one of 'rawDb' or 'anonDb'<br/>
+    dbType is one of 'rawDb' or 'anonDb' <br/>
     return format: [(col,type),(col,type),...]"""
     if len(tableName) == 0:
         # caller didn't supply a table name, so get it from the
@@ -3803,7 +3805,7 @@ return format: [(col,type),(col,type),...]</p></div>
     <div class="desc"><p>Wait for and gather results of prior askExplore() calls.</p>
 <p>Blocks until the result is available. Note that the order
 in which results are received is not necesarily the order
-in which <code>askExplore()</code> calls were made.<br/>
+in which <code>askExplore()</code> calls were made. <br/>
 Return parameter formatted the same as with <code>getAttack()</code></p></div>
   <div class="source_cont">
   <p class="source_link"><a href="javascript:void(0);" onclick="toggle('source-gdaScore.gdaAttack.getExplore', this);">Show source &equiv;</a></p>
@@ -3813,7 +3815,7 @@ Return parameter formatted the same as with <code>getAttack()</code></p></div>
     
         Blocks until the result is available. Note that the order
         in which results are received is not necesarily the order
-        in which `askExplore()` calls were made.<br/>
+        in which `askExplore()` calls were made. <br/>
         Return parameter formatted the same as with `getAttack()`"""
     if self._vb: print(f"Calling {__name__}.getExplore")
     if self._exploreCounter == 0:
@@ -3845,7 +3847,7 @@ Return parameter formatted the same as with <code>getAttack()</code></p></div>
     <div class="desc"><p>Wait for and gather results of prior askKnowledge() calls</p>
 <p>Blocks until the result is available. Note that the order
 in which results are received is not necesarily the order
-in which <code>askKnowledge()</code> calls were made.<br/>
+in which <code>askKnowledge()</code> calls were made. <br/>
 Return parameter formatted the same as with <code>getAttack()</code></p></div>
   <div class="source_cont">
   <p class="source_link"><a href="javascript:void(0);" onclick="toggle('source-gdaScore.gdaAttack.getKnowledge', this);">Show source &equiv;</a></p>
@@ -3855,7 +3857,7 @@ Return parameter formatted the same as with <code>getAttack()</code></p></div>
     
         Blocks until the result is available. Note that the order
         in which results are received is not necesarily the order
-        in which `askKnowledge()` calls were made.<br/>
+        in which `askKnowledge()` calls were made. <br/>
         Return parameter formatted the same as with `getAttack()`"""
     if self._vb: print(f"Calling {__name__}.getKnowledge")
     if self._knowledgeCounter == 0:
@@ -3950,7 +3952,7 @@ Return parameter formatted the same as with <code>getAttack()</code></p></div>
     
   
     <div class="desc"><p>Return database table names</p>
-<p>dbType is one of 'rawDb' or 'anonDb'<br/>
+<p>dbType is one of 'rawDb' or 'anonDb' <br/>
 Table names returned as list, unless error then return None</p></div>
   <div class="source_cont">
   <p class="source_link"><a href="javascript:void(0);" onclick="toggle('source-gdaScore.gdaAttack.getTableNames', this);">Show source &equiv;</a></p>
@@ -3958,7 +3960,7 @@ Table names returned as list, unless error then return None</p></div>
     <pre><code>def getTableNames(self,dbType='rawDb'):
     """Return database table names
     
-    dbType is one of 'rawDb' or 'anonDb'<br/>
+    dbType is one of 'rawDb' or 'anonDb' <br/>
     Table names returned as list, unless error then return None"""
     # Establish connection to database
     db = self._getDatabaseInfo(self._p[dbType])
@@ -4045,7 +4047,7 @@ Table names returned as list, unless error then return None</p></div>
       
   
     <div class="desc"><p>Computes the final GDA Score from the scores returned by gdaAttack</p>
-<p>See <strong>init</strong> for input parameters.<br/>
+<p>See <strong>init</strong> for input parameters. <br/>
 WARNING: this code is fragile, and can fail ungracefully.</p></div>
   <div class="source_cont">
   <p class="source_link"><a href="javascript:void(0);" onclick="toggle('source-gdaScore.gdaScores', this);">Show source &equiv;</a></p>
@@ -4053,7 +4055,7 @@ WARNING: this code is fragile, and can fail ungracefully.</p></div>
     <pre><code>class gdaScores:
     """Computes the final GDA Score from the scores returned by gdaAttack
 
-       See __init__ for input parameters.<br/>
+       See __init__ for input parameters. <br/>
        WARNING: this code is fragile, and can fail ungracefully."""
 
     # ar (AttackResults) contains the combined results from one or more
@@ -4085,7 +4087,7 @@ WARNING: this code is fragile, and can fail ungracefully.</p></div>
     def addResult(self, result):
         """ Adds first result or combines result with existing results
 
-            `result` is the data returned by `gdaAttack.getResults()`<br/>
+            `result` is the data returned by `gdaAttack.getResults()` <br/>
             Returns True if add succeeded, False otherwise"""
 
         # Check that results are meaningfully combinable
@@ -4117,9 +4119,9 @@ WARNING: this code is fragile, and can fail ungracefully.</p></div>
 
             By default, value will already be 1 (fully susceptible),
             so only need to call this if you wish to assign a different
-            value.<br/>
-            `column` is the name of the column being assigned to.<br/>
-            `susValue` can be any value between 0 and 1<br/>
+            value. <br/>
+            `column` is the name of the column being assigned to. <br/>
+            `susValue` can be any value between 0 and 1 <br/>
 
             returns False if failed to assign"""
         if column not in self._ar['col']:
@@ -4133,7 +4135,7 @@ WARNING: this code is fragile, and can fail ungracefully.</p></div>
         """ Returns all scores, both derived and attack generated
         
             `method` is the scoring algorithm (currently only one,
-            'mpi_sws_basic_v').<br/>
+            'mpi_sws_basic_v'). <br/>
             Derives a score from the `numColumns` columns with the
             weakest defense score. Uses all attacked columns if
             numColumns omitted. `numColumns=1` will give the worst-case
@@ -4332,14 +4334,14 @@ WARNING: this code is fragile, and can fail ungracefully.</p></div>
     
   
     <div class="desc"><p>Adds first result or combines result with existing results</p>
-<p><code>result</code> is the data returned by <code>gdaAttack.getResults()</code><br/>
+<p><code>result</code> is the data returned by <code>gdaAttack.getResults()</code> <br/>
 Returns True if add succeeded, False otherwise</p></div>
   <div class="source_cont">
   <p class="source_link"><a href="javascript:void(0);" onclick="toggle('source-gdaScore.gdaScores.addResult', this);">Show source &equiv;</a></p>
   <div id="source-gdaScore.gdaScores.addResult" class="source">
     <pre><code>def addResult(self, result):
     """ Adds first result or combines result with existing results
-        `result` is the data returned by `gdaAttack.getResults()`<br/>
+        `result` is the data returned by `gdaAttack.getResults()` <br/>
         Returns True if add succeeded, False otherwise"""
     # Check that results are meaningfully combinable
     if 'attack' in self._ar:
@@ -4381,9 +4383,9 @@ Returns True if add succeeded, False otherwise</p></div>
     <div class="desc"><p>Assigns a susceptibility value to the column</p>
 <p>By default, value will already be 1 (fully susceptible),
 so only need to call this if you wish to assign a different
-value.<br/>
-<code>column</code> is the name of the column being assigned to.<br/>
-<code>susValue</code> can be any value between 0 and 1<br/></p>
+value. <br/>
+<code>column</code> is the name of the column being assigned to. <br/>
+<code>susValue</code> can be any value between 0 and 1 <br/></p>
 <p>returns False if failed to assign</p></div>
   <div class="source_cont">
   <p class="source_link"><a href="javascript:void(0);" onclick="toggle('source-gdaScore.gdaScores.assignColumnSusceptibility', this);">Show source &equiv;</a></p>
@@ -4392,9 +4394,9 @@ value.<br/>
     """ Assigns a susceptibility value to the column
         By default, value will already be 1 (fully susceptible),
         so only need to call this if you wish to assign a different
-        value.<br/>
-        `column` is the name of the column being assigned to.<br/>
-        `susValue` can be any value between 0 and 1<br/>
+        value. <br/>
+        `column` is the name of the column being assigned to. <br/>
+        `susValue` can be any value between 0 and 1 <br/>
         returns False if failed to assign"""
     if column not in self._ar['col']:
         return False
@@ -4419,7 +4421,7 @@ value.<br/>
   
     <div class="desc"><p>Returns all scores, both derived and attack generated</p>
 <p><code>method</code> is the scoring algorithm (currently only one,
-'mpi_sws_basic_v').<br/>
+'mpi_sws_basic_v'). <br/>
 Derives a score from the <code>numColumns</code> columns with the
 weakest defense score. Uses all attacked columns if
 numColumns omitted. <code>numColumns=1</code> will give the worst-case
@@ -4432,7 +4434,7 @@ usually produce a stronger defense score.</p></div>
     """ Returns all scores, both derived and attack generated
     
         `method` is the scoring algorithm (currently only one,
-        'mpi_sws_basic_v').<br/>
+        'mpi_sws_basic_v'). <br/>
         Derives a score from the `numColumns` columns with the
         weakest defense score. Uses all attacked columns if
         numColumns omitted. `numColumns=1` will give the worst-case
