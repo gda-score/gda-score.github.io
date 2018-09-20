@@ -985,6 +985,7 @@ table {
     <li class="mono"><a href="#gdaScore.gdaAttack.askKnowledge">askKnowledge</a></li>
     <li class="mono"><a href="#gdaScore.gdaAttack.cleanUp">cleanUp</a></li>
     <li class="mono"><a href="#gdaScore.gdaAttack.getAttack">getAttack</a></li>
+    <li class="mono"><a href="#gdaScore.gdaAttack.getAttackTableName">getAttackTableName</a></li>
     <li class="mono"><a href="#gdaScore.gdaAttack.getClaim">getClaim</a></li>
     <li class="mono"><a href="#gdaScore.gdaAttack.getColNames">getColNames</a></li>
     <li class="mono"><a href="#gdaScore.gdaAttack.getColNamesAndTypes">getColNamesAndTypes</a></li>
@@ -1399,7 +1400,7 @@ class gdaAttack:
                 self._p['numAnonDbThreads'] + 1):
             print(f"Error: Some thread(s) died "
                    "(count {numThreads}). Aborting.")
-            self.cleanUp(doExit=True)
+            self.cleanUp(cleanUpCache=False,doExit=True)
 
     def getResults(self):
         """ Returns all of the compiled attack results.
@@ -1564,7 +1565,7 @@ class gdaAttack:
             elif 'error' in job['replies'][1]:
                 self._pp.pprint(job)
                 print(f"Error: conf query:\n{job['replies'][1]['error']}")
-                self.cleanUp(doExit=True)
+                self.cleanUp(cleanUpCache=False,doExit=True)
             if 'answer' in job['replies'][2]:
                 if job['replies'][2]['answer']:
                     totalRows = job['replies'][2]['answer'][0][0]
@@ -1573,7 +1574,7 @@ class gdaAttack:
             elif 'error' in job['replies'][2]:
                 self._pp.pprint(job)
                 print(f"Error: conf query:\n{job['replies'][2]['error']}")
-                self.cleanUp(doExit=True)
+                self.cleanUp(cleanUpCache=False,doExit=True)
             if totalRows:
                 self._addToAtkRes('sumConfidenceRatios', job['spec'],
                         guessedRows/totalRows)
@@ -1717,7 +1718,7 @@ class gdaAttack:
     def getColNames(self,dbType='rawDb',tableName=''):
         """Return simple list of column names
 
-        dbType is one of 'rawDb' or 'anonDb'"""
+        `dbType` is one of 'rawDb' or 'anonDb'"""
 
         if len(tableName) == 0:
             colsAndTypes = self.getColNamesAndTypes(dbType=dbType)
@@ -1730,6 +1731,10 @@ class gdaAttack:
         for tup in colsAndTypes:
             cols.append(tup[0])
         return cols
+
+    def getAttackTableName(self):
+        """Returns the name of the table being used in the attack."""
+        return self._p['table']
 
     # Note that following is used internally, but we expose it to the
     # caller as well because it is a useful function for exploration
@@ -1762,7 +1767,7 @@ class gdaAttack:
             cur.execute(sql)
         except psycopg2.Error as e:
             print(f"Error: getColNamesAndTypes() query: '{e}'")
-            self.cleanUp(doExit=True)
+            self.cleanUp(cleanUpCache=False,doExit=True)
         ans = cur.fetchall()
         ret = []
         for row in ans:
@@ -1796,7 +1801,7 @@ class gdaAttack:
             cur.execute(sql)
         except psycopg2.Error as e:
             print(f"Error: getTableNames() query: '{e}'")
-            self.cleanUp(doExit=True)
+            self.cleanUp(cleanUpCache=False,doExit=True)
         ans = cur.fetchall()
         ret = []
         for row in ans:
@@ -2106,7 +2111,7 @@ class gdaAttack:
         else:
             print("""Error: criteria must be one of 'singlingOut',
                      'inference', or 'linkability'""")
-            self.cleanUp(doExit=True)
+            self.cleanUp(cleanUpCache=False,doExit=True)
         return sql
 
     def _makeSqlConfFromSpec(self,spec):
@@ -2136,10 +2141,10 @@ class gdaAttack:
             col = tup['col']
             if col not in self._atrs['col']:
                 print(f"Error: addToAtkRes(): Bad column in spec: '{col}'")
-                self.cleanUp(doExit=True)
+                self.cleanUp(cleanUpCache=False,doExit=True)
             if label not in self._atrs['col'][col]:
                 print(f"Error: addToAtkRes(): Bad label '{label}'")
-                self.cleanUp(doExit=True)
+                self.cleanUp(cleanUpCache=False,doExit=True)
             self._atrs['col'][col][label] += val
 
     def _initAtkRes(self):
@@ -2352,7 +2357,7 @@ just hang.</p></div>
                 self._p['numAnonDbThreads'] + 1):
             print(f"Error: Some thread(s) died "
                    "(count {numThreads}). Aborting.")
-            self.cleanUp(doExit=True)
+            self.cleanUp(cleanUpCache=False,doExit=True)
 
     def getResults(self):
         """ Returns all of the compiled attack results.
@@ -2517,7 +2522,7 @@ just hang.</p></div>
             elif 'error' in job['replies'][1]:
                 self._pp.pprint(job)
                 print(f"Error: conf query:\n{job['replies'][1]['error']}")
-                self.cleanUp(doExit=True)
+                self.cleanUp(cleanUpCache=False,doExit=True)
             if 'answer' in job['replies'][2]:
                 if job['replies'][2]['answer']:
                     totalRows = job['replies'][2]['answer'][0][0]
@@ -2526,7 +2531,7 @@ just hang.</p></div>
             elif 'error' in job['replies'][2]:
                 self._pp.pprint(job)
                 print(f"Error: conf query:\n{job['replies'][2]['error']}")
-                self.cleanUp(doExit=True)
+                self.cleanUp(cleanUpCache=False,doExit=True)
             if totalRows:
                 self._addToAtkRes('sumConfidenceRatios', job['spec'],
                         guessedRows/totalRows)
@@ -2670,7 +2675,7 @@ just hang.</p></div>
     def getColNames(self,dbType='rawDb',tableName=''):
         """Return simple list of column names
 
-        dbType is one of 'rawDb' or 'anonDb'"""
+        `dbType` is one of 'rawDb' or 'anonDb'"""
 
         if len(tableName) == 0:
             colsAndTypes = self.getColNamesAndTypes(dbType=dbType)
@@ -2683,6 +2688,10 @@ just hang.</p></div>
         for tup in colsAndTypes:
             cols.append(tup[0])
         return cols
+
+    def getAttackTableName(self):
+        """Returns the name of the table being used in the attack."""
+        return self._p['table']
 
     # Note that following is used internally, but we expose it to the
     # caller as well because it is a useful function for exploration
@@ -2715,7 +2724,7 @@ just hang.</p></div>
             cur.execute(sql)
         except psycopg2.Error as e:
             print(f"Error: getColNamesAndTypes() query: '{e}'")
-            self.cleanUp(doExit=True)
+            self.cleanUp(cleanUpCache=False,doExit=True)
         ans = cur.fetchall()
         ret = []
         for row in ans:
@@ -2749,7 +2758,7 @@ just hang.</p></div>
             cur.execute(sql)
         except psycopg2.Error as e:
             print(f"Error: getTableNames() query: '{e}'")
-            self.cleanUp(doExit=True)
+            self.cleanUp(cleanUpCache=False,doExit=True)
         ans = cur.fetchall()
         ret = []
         for row in ans:
@@ -3059,7 +3068,7 @@ just hang.</p></div>
         else:
             print("""Error: criteria must be one of 'singlingOut',
                      'inference', or 'linkability'""")
-            self.cleanUp(doExit=True)
+            self.cleanUp(cleanUpCache=False,doExit=True)
         return sql
 
     def _makeSqlConfFromSpec(self,spec):
@@ -3089,10 +3098,10 @@ just hang.</p></div>
             col = tup['col']
             if col not in self._atrs['col']:
                 print(f"Error: addToAtkRes(): Bad column in spec: '{col}'")
-                self.cleanUp(doExit=True)
+                self.cleanUp(cleanUpCache=False,doExit=True)
             if label not in self._atrs['col'][col]:
                 print(f"Error: addToAtkRes(): Bad label '{label}'")
-                self.cleanUp(doExit=True)
+                self.cleanUp(cleanUpCache=False,doExit=True)
             self._atrs['col'][col][label] += val
 
     def _initAtkRes(self):
@@ -3280,7 +3289,7 @@ file. <br/>
             self._p['numAnonDbThreads'] + 1):
         print(f"Error: Some thread(s) died "
                "(count {numThreads}). Aborting.")
-        self.cleanUp(doExit=True)
+        self.cleanUp(cleanUpCache=False,doExit=True)
 </code></pre>
   </div>
 </div>
@@ -3585,6 +3594,28 @@ element, etc. <br/>
   
             
   <div class="item">
+    <div class="name def" id="gdaScore.gdaAttack.getAttackTableName">
+    <p>def <span class="ident">getAttackTableName</span>(</p><p>self)</p>
+    </div>
+    
+
+    
+  
+    <div class="desc"><p>Returns the name of the table being used in the attack.</p></div>
+  <div class="source_cont">
+  <p class="source_link"><a href="javascript:void(0);" onclick="toggle('source-gdaScore.gdaAttack.getAttackTableName', this);">Show source &equiv;</a></p>
+  <div id="source-gdaScore.gdaAttack.getAttackTableName" class="source">
+    <pre><code>def getAttackTableName(self):
+    """Returns the name of the table being used in the attack."""
+    return self._p['table']
+</code></pre>
+  </div>
+</div>
+
+  </div>
+  
+            
+  <div class="item">
     <div class="name def" id="gdaScore.gdaAttack.getClaim">
     <p>def <span class="ident">getClaim</span>(</p><p>self)</p>
     </div>
@@ -3678,7 +3709,7 @@ claims submitted by <code>askClaim()</code> have been returned.</p></div>
         elif 'error' in job['replies'][1]:
             self._pp.pprint(job)
             print(f"Error: conf query:\n{job['replies'][1]['error']}")
-            self.cleanUp(doExit=True)
+            self.cleanUp(cleanUpCache=False,doExit=True)
         if 'answer' in job['replies'][2]:
             if job['replies'][2]['answer']:
                 totalRows = job['replies'][2]['answer'][0][0]
@@ -3687,7 +3718,7 @@ claims submitted by <code>askClaim()</code> have been returned.</p></div>
         elif 'error' in job['replies'][2]:
             self._pp.pprint(job)
             print(f"Error: conf query:\n{job['replies'][2]['error']}")
-            self.cleanUp(doExit=True)
+            self.cleanUp(cleanUpCache=False,doExit=True)
         if totalRows:
             self._addToAtkRes('sumConfidenceRatios', job['spec'],
                     guessedRows/totalRows)
@@ -3714,13 +3745,13 @@ claims submitted by <code>askClaim()</code> have been returned.</p></div>
     
   
     <div class="desc"><p>Return simple list of column names</p>
-<p>dbType is one of 'rawDb' or 'anonDb'</p></div>
+<p><code>dbType</code> is one of 'rawDb' or 'anonDb'</p></div>
   <div class="source_cont">
   <p class="source_link"><a href="javascript:void(0);" onclick="toggle('source-gdaScore.gdaAttack.getColNames', this);">Show source &equiv;</a></p>
   <div id="source-gdaScore.gdaAttack.getColNames" class="source">
     <pre><code>def getColNames(self,dbType='rawDb',tableName=''):
     """Return simple list of column names
-    dbType is one of 'rawDb' or 'anonDb'"""
+    `dbType` is one of 'rawDb' or 'anonDb'"""
     if len(tableName) == 0:
         colsAndTypes = self.getColNamesAndTypes(dbType=dbType)
     else:
@@ -3780,7 +3811,7 @@ return format: [(col,type),(col,type),...]</p></div>
         cur.execute(sql)
     except psycopg2.Error as e:
         print(f"Error: getColNamesAndTypes() query: '{e}'")
-        self.cleanUp(doExit=True)
+        self.cleanUp(cleanUpCache=False,doExit=True)
     ans = cur.fetchall()
     ret = []
     for row in ans:
@@ -3982,7 +4013,7 @@ Table names returned as list, unless error then return None</p></div>
         cur.execute(sql)
     except psycopg2.Error as e:
         print(f"Error: getTableNames() query: '{e}'")
-        self.cleanUp(doExit=True)
+        self.cleanUp(cleanUpCache=False,doExit=True)
     ans = cur.fetchall()
     ret = []
     for row in ans:
