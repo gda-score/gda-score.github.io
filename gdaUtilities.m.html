@@ -1008,7 +1008,8 @@ def setupGdaAttackParameters(cmdArgs, criteria=''):
         `cmdArgs` is the command line args list (`sys.argv`) <br/>
         `cmdArgs[1]` is either the name or the config file, or
         empty if the default config file name should be used. <br/>
-        Returns a data structure that can be used for class `gdaAttack()` <br/>
+        Returns a list of data structure that can be used for
+        class `gdaAttack()` <br/>
         Adds the following to the returned data structure (`par`) <br/>
         `par['finished']`: `True` if attack previously completed. 
         Else `False` <br/>
@@ -1037,49 +1038,50 @@ def setupGdaAttackParameters(cmdArgs, criteria=''):
         e = str(f"ERROR: file '{fileName}' not found.\n{usageStr}")
         sys.exit(e)
 
-    pm = json.load(f)
+    pmList = json.load(f)
     f.close()
 
-    if 'criteria' not in pm or len(pm['criteria']) == 0:
-        if not criteria:
-            sys.exit("ERROR: criteria must be specified")
-        pm['criteria'] = criteria
-
-    if 'name' not in pm or len(pm['name']) == 0:
-        baseName = str(f"{sys.argv[0]}")
-        if 'anonType' in pm and len(pm['anonType']) > 0:
-            baseName += str(f".{pm['anonType']}")
-        if 'anonSubType' in pm and len(pm['anonSubType']) > 0:
-            baseName += str(f".{pm['anonSubType']}")
-        if 'dbType' not in pm or len(pm['dbType']) == 0:
-            baseName +=  str(f".{pm['rawDb']}.{pm['anonDb']}")
+    for pm in pmList:
+        if 'criteria' not in pm or len(pm['criteria']) == 0:
+            if not criteria:
+                sys.exit("ERROR: criteria must be specified")
+            pm['criteria'] = criteria
+    
+        if 'name' not in pm or len(pm['name']) == 0:
+            baseName = str(f"{sys.argv[0]}")
+            if 'anonType' in pm and len(pm['anonType']) > 0:
+                baseName += str(f".{pm['anonType']}")
+            if 'anonSubType' in pm and len(pm['anonSubType']) > 0:
+                baseName += str(f".{pm['anonSubType']}")
+            if 'dbType' not in pm or len(pm['dbType']) == 0:
+                baseName +=  str(f".{pm['rawDb']}.{pm['anonDb']}")
+            else:
+                baseName += str(f".{pm['dbType']}")
+            if 'table' in pm and len(pm['table']) > 0:
+                baseName += str(f".{pm['table']}")
         else:
-            baseName += str(f".{pm['dbType']}")
-        if 'table' in pm and len(pm['table']) > 0:
-            baseName += str(f".{pm['table']}")
-    else:
-        baseName = pm['name']
-    pm['name'] = baseName
+            baseName = pm['name']
+        pm['name'] = baseName
+    
+        resultsDir = "attackResults";
+        if 'resultsDir' in pm and len(pm['resultsDir']) > 0:
+            resultsDir = pm['resultsDir']
+    
+        resultsPath = resultsDir + "/" + baseName + ".json"
+        pm['resultsPath'] = resultsPath
+        pm['finished'] = False
+        try:
+            f = open(resultsPath, 'r')
+        except:
+            # No prior results for this attack have been posted
+            pass
+        else:
+            # Prior results have been posted. Make sure they are complete.
+            res = json.load(f)
+            if 'finished' in res:
+                pm['finished'] = True
 
-    resultsDir = "attackResults";
-    if 'resultsDir' in pm and len(pm['resultsDir']) > 0:
-        resultsDir = pm['resultsDir']
-
-    resultsPath = resultsDir + "/" + baseName + ".json"
-    pm['resultsPath'] = resultsPath
-    pm['finished'] = False
-    try:
-        f = open(resultsPath, 'r')
-    except:
-        # No prior results for this attack have been posted
-        pass
-    else:
-        # Prior results have been posted. Make sure they are complete.
-        res = json.load(f)
-        if 'finished' in res:
-            pm['finished'] = True
-
-    return pm
+    return pmList
 
 def finishGdaAttack(params,score):
     """ Stores the attack results in a json file
@@ -1092,7 +1094,7 @@ def finishGdaAttack(params,score):
     final['score'] = score
     final['params'] = params
     final['finished'] = True
-    j = json.dumps(final)
+    j = json.dumps(final, sort_keys=True, indent=4)
     resultsPath = params['resultsPath']
     try:
         f = open(resultsPath, 'w')
@@ -1193,7 +1195,7 @@ def makeGroupBy(columns):
     final['score'] = score
     final['params'] = params
     final['finished'] = True
-    j = json.dumps(final)
+    j = json.dumps(final, sort_keys=True, indent=4)
     resultsPath = params['resultsPath']
     try:
         f = open(resultsPath, 'w')
@@ -1249,7 +1251,8 @@ def makeGroupBy(columns):
 <p><code>cmdArgs</code> is the command line args list (<code>sys.argv</code>) <br/>
 <code>cmdArgs[1]</code> is either the name or the config file, or
 empty if the default config file name should be used. <br/>
-Returns a data structure that can be used for class <code>gdaAttack()</code> <br/>
+Returns a list of data structure that can be used for
+class <code>gdaAttack()</code> <br/>
 Adds the following to the returned data structure (<code>par</code>) <br/>
 <code>par['finished']</code>: <code>True</code> if attack previously completed. 
 Else <code>False</code> <br/>
@@ -1265,7 +1268,8 @@ be stored. <br/>
         `cmdArgs` is the command line args list (`sys.argv`) <br/>
         `cmdArgs[1]` is either the name or the config file, or
         empty if the default config file name should be used. <br/>
-        Returns a data structure that can be used for class `gdaAttack()` <br/>
+        Returns a list of data structure that can be used for
+        class `gdaAttack()` <br/>
         Adds the following to the returned data structure (`par`) <br/>
         `par['finished']`: `True` if attack previously completed. 
         Else `False` <br/>
@@ -1294,49 +1298,50 @@ be stored. <br/>
         e = str(f"ERROR: file '{fileName}' not found.\n{usageStr}")
         sys.exit(e)
 
-    pm = json.load(f)
+    pmList = json.load(f)
     f.close()
 
-    if 'criteria' not in pm or len(pm['criteria']) == 0:
-        if not criteria:
-            sys.exit("ERROR: criteria must be specified")
-        pm['criteria'] = criteria
-
-    if 'name' not in pm or len(pm['name']) == 0:
-        baseName = str(f"{sys.argv[0]}")
-        if 'anonType' in pm and len(pm['anonType']) > 0:
-            baseName += str(f".{pm['anonType']}")
-        if 'anonSubType' in pm and len(pm['anonSubType']) > 0:
-            baseName += str(f".{pm['anonSubType']}")
-        if 'dbType' not in pm or len(pm['dbType']) == 0:
-            baseName +=  str(f".{pm['rawDb']}.{pm['anonDb']}")
+    for pm in pmList:
+        if 'criteria' not in pm or len(pm['criteria']) == 0:
+            if not criteria:
+                sys.exit("ERROR: criteria must be specified")
+            pm['criteria'] = criteria
+    
+        if 'name' not in pm or len(pm['name']) == 0:
+            baseName = str(f"{sys.argv[0]}")
+            if 'anonType' in pm and len(pm['anonType']) > 0:
+                baseName += str(f".{pm['anonType']}")
+            if 'anonSubType' in pm and len(pm['anonSubType']) > 0:
+                baseName += str(f".{pm['anonSubType']}")
+            if 'dbType' not in pm or len(pm['dbType']) == 0:
+                baseName +=  str(f".{pm['rawDb']}.{pm['anonDb']}")
+            else:
+                baseName += str(f".{pm['dbType']}")
+            if 'table' in pm and len(pm['table']) > 0:
+                baseName += str(f".{pm['table']}")
         else:
-            baseName += str(f".{pm['dbType']}")
-        if 'table' in pm and len(pm['table']) > 0:
-            baseName += str(f".{pm['table']}")
-    else:
-        baseName = pm['name']
-    pm['name'] = baseName
+            baseName = pm['name']
+        pm['name'] = baseName
+    
+        resultsDir = "attackResults";
+        if 'resultsDir' in pm and len(pm['resultsDir']) > 0:
+            resultsDir = pm['resultsDir']
+    
+        resultsPath = resultsDir + "/" + baseName + ".json"
+        pm['resultsPath'] = resultsPath
+        pm['finished'] = False
+        try:
+            f = open(resultsPath, 'r')
+        except:
+            # No prior results for this attack have been posted
+            pass
+        else:
+            # Prior results have been posted. Make sure they are complete.
+            res = json.load(f)
+            if 'finished' in res:
+                pm['finished'] = True
 
-    resultsDir = "attackResults";
-    if 'resultsDir' in pm and len(pm['resultsDir']) > 0:
-        resultsDir = pm['resultsDir']
-
-    resultsPath = resultsDir + "/" + baseName + ".json"
-    pm['resultsPath'] = resultsPath
-    pm['finished'] = False
-    try:
-        f = open(resultsPath, 'r')
-    except:
-        # No prior results for this attack have been posted
-        pass
-    else:
-        # Prior results have been posted. Make sure they are complete.
-        res = json.load(f)
-        if 'finished' in res:
-            pm['finished'] = True
-
-    return pm
+    return pmList
 </code></pre>
   </div>
 </div>

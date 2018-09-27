@@ -1173,6 +1173,10 @@ class gdaScores:
             sc['confidenceImprovement'] /= len(weakCols)
             sc['claimProbability'] /= len(weakCols)
             sc['susceptibility'] /= self._ar['tableStats']['numColumns']
+        else:
+            # No claims could even be made
+            sc['susceptibility'] = 0
+            sc['confidenceImprovement'] = 0
         # define knowledge needed as the number of knowledge cells requested
         # over the total number of cells for which cliams were made
         # likewise "work" can be defined as the number of attack cells
@@ -1183,12 +1187,12 @@ class gdaScores:
             sc['workNeeded'] = ( 
                     self._ar['base']['attackCells'] / totalClaimsMade)
         else:
-            sc['knowledgeNeeded'] = 0
-            sc['workNeeded'] = 0
+            sc['knowledgeNeeded'] = None
+            sc['workNeeded'] = None
         # Compute an overall defense score from the other scores
         score = self._getSuscListScore(sc['susceptibility'])
         if score > sc['defense']:
-            sc['defence'] = score
+            sc['defense'] = score
         return
 
     def _getWeakestDefenseColumns(self, numColumns):
@@ -1318,6 +1322,7 @@ class gdaAttack:
     _p = dict(name='',
                rawDb = '',
                anonDb = '',
+               pubDb = '',
                criteria = '',
                table = '',
                flushCache=False,
@@ -1326,6 +1331,7 @@ class gdaAttack:
                locCacheDir = "cacheDBs",
                numRawDbThreads = 3,
                numAnonDbThreads = 3,
+               numPubDbThreads = 3,
                dbConfig = "../config/myDatabases.json",
               )
     _requiredParams = ['name','rawDb','anonDb','criteria']
@@ -1334,9 +1340,11 @@ class gdaAttack:
     # Threads
     _rawThreads = []
     _anonThreads = []
+    _pubThreads = []
     # Queues read by database threads _rawThreads and _anonThreads
     _rawQ = None
     _anonQ = None
+    _pubQ = None
     # Queues read by various caller functions
     _exploreQ = None
     _knowledgeQ = None
@@ -1364,11 +1372,13 @@ class gdaAttack:
             `param['rawDb']`: The label for the DB to be used as the
             raw (non-anonymized) DB. From `param['dbConfig']`. <br/>
             `param['anonDb']`: The label for the DB to be used as the
-            anonymized) DB. <br/>
+            anonymized DB. <br/>
             `param['criteria']`: The criteria by which the attack should
             determined to succeed or fail. Must be one of 'singlingOut',
             'inference', or 'linkability' <br/>
             Following are the optional parameters: <br/>
+            `param['pubDb']`: The label for the DB to be used as the
+            publicly known DB in linkability attacks. <br/>
             `param['table']`: The table to be attacked. Must be present
             if the DB has more than one table. <br/>
             `param['flushCache']`: Set to true if you want the cache of
@@ -1381,6 +1391,8 @@ class gdaAttack:
             that can be made to the raw DB. Default 3. <br/>
             `param['numAnonDbThreads']`: The number of parallel queries
             that can be made to the anon DB. Default 3. <br/>
+            `param['numPubDbThreads']`: The number of parallel queries
+            that can be made to the public linkability DB. Default 3. <br/>
             `param['dbConfig']`: The path to the json DB configureation
             file. <br/>
             `param['verbose']`: Set to True for verbose output.
@@ -1423,10 +1435,14 @@ class gdaAttack:
         # Setup the threads and queues
         self._setupThreadsAndQueues()
         numThreads = threading.active_count()
-        if numThreads != (self._p['numRawDbThreads'] +
-                self._p['numAnonDbThreads'] + 1):
+        expectedThreads = (self._p['numRawDbThreads'] +
+                self._p['numAnonDbThreads'] + 1)
+        if len(self._p['pubDb']) > 0:
+            expectedThreads += self._p['numPubDbThreads']
+        if numThreads != expectedThreads:
             print(f"Error: Some thread(s) died "
-                   "(count {numThreads}). Aborting.")
+                   "(count {numThreads}, expected {expectedThreads}). "
+                   "Aborting.")
             self.cleanUp(cleanUpCache=False,doExit=True)
 
     def getResults(self):
@@ -1481,26 +1497,34 @@ class gdaAttack:
         # if a thread is gone or hanging, not all signals will get read)
         for i in range(self._p['numRawDbThreads']):
             self._rawQ.put(None)
+        for i in range(self._p['numAnonDbThreads']):
             self._anonQ.put(None)
         for t in self._rawThreads + self._anonThreads:
             if t.isAlive(): t.join()
+        if len(self._p['pubDb']) > 0:
+            if self._pubQ.empty() != True:
+                print("Warning, trying to clean up when pub queue not empty!")
+            for i in range(self._p['numPubDbThreads']):
+                self._pubQ.put(None)
+            for t in self._pubThreads:
+                if t.isAlive(): t.join()
         if cleanUpCache:
             self._removeLocalCacheDB()
         if doExit:
             sys.exit(exitMsg)
 
     def askClaim(self,spec,cache=True,claim=True):
-        """Generate Claim query for raw database.
+        """Generate Claim query for raw and optionally pub databases.
 
-        Making a claim results in a query to the raw database, to check
+        Making a claim results in a query to the raw database, and if
+        linkability attack, the pub database, to check
         the correctness of the claim. Multiple calls to this method will
         cause the corresponding queries to be queued up, so `askClaim()`
         returns immediately. `getClaim()` harvests one claim result. <br/>
         Set `claim=False` if this claim should not be applied to the
         confidence improvement score. In this case, the probability score
         will instead be reduced accordingly. <br/>
-        When the attack criteria is 'singlingOut' or 'inference', the `spec`
-        is formatted as follows: <br/>
+        The `spec` is formatted as follows: <br/>
 
             `{'uid':'uidCol',
              `'known':[{'col':'colName','val':'value'},...],`
@@ -1508,10 +1532,11 @@ class gdaAttack:
             `}`
 
         `spec['known']` are the columns and values the attacker already knows
-        (i.e. with prior knowledge) <br/>
+        (i.e. with prior knowledge). Optional. <br/>
         `spec['guess']` are the columns and values the attacker doesn't know,
-        but rather is trying to predict. <br/>
-        `spec['uid']` is the name of the UID column. <br/>
+        but rather is trying to predict. Mandatory for 'singling out'
+        and 'inference'. Optional for 'linkabiblity' <br/>
+        `spec['uid']` is the name of the UID column. Mandatory. <br/>
         Answers are cached <br/>
         Returns immediately"""
         if self._vb: print(f"Calling {__name__}.askClaim with spec '{spec}', count {self._claimCounter}")
@@ -1565,26 +1590,28 @@ class gdaAttack:
         self._claimCounter -= 1
         job['stillToCome'] = self._claimCounter
         self._addToAtkRes('claimTrials', job['spec'], 1)
+        # The claim is tested against the first reply
+        reply = job['replies'][0]
+        job['claimResult'] = 'Wrong'
+        if claim:
+            self._addToAtkRes('claimMade', job['spec'], 1)
+        if 'error' in reply:
+            self._addToAtkRes('claimError', job['spec'], 1)
+            job['claimResult'] = 'Error'
+        else:
+            if self._cr == 'singlingOut':
+                claimIsCorrect = self._checkSinglingOut(reply['answer'])
+            elif self._cr == 'inference':
+                claimIsCorrect = self._checkInference(reply['answer'])
+            elif self._cr == 'linkability':
+                claimIsCorrect = self._checkLinkability(reply['answer'])
+            if claim == 1 and claimIsCorrect:
+                self._addToAtkRes('claimCorrect', job['spec'], 1)
+                job['claimResult'] = 'Correct'
+            elif claim == 0 and claimIsCorrect:
+                self._addToAtkRes('claimPassCorrect', job['spec'], 1)
+                job['claimResult'] = 'Correct'
         if self._cr == 'singlingOut' or self._cr == 'inference':
-            # The claim is tested against the first reply
-            reply = job['replies'][0]
-            job['claimResult'] = 'Wrong'
-            if claim:
-                self._addToAtkRes('claimMade', job['spec'], 1)
-            if 'error' in reply:
-                self._addToAtkRes('claimError', job['spec'], 1)
-                job['claimResult'] = 'Error'
-            else:
-                if self._cr == 'singlingOut':
-                    claimIsCorrect = self._checkSinglingOut(reply['answer'])
-                elif self._cr == 'inference':
-                    claimIsCorrect = self._checkInference(reply['answer'])
-                if claim == 1 and claimIsCorrect:
-                    self._addToAtkRes('claimCorrect', job['spec'], 1)
-                    job['claimResult'] = 'Correct'
-                elif claim == 0 and claimIsCorrect:
-                    self._addToAtkRes('claimPassCorrect', job['spec'], 1)
-                    job['claimResult'] = 'Correct'
             # Then measure confidence against the second and third replies
             if 'answer' in job['replies'][1]:
                 if job['replies'][1]['answer']:
@@ -1609,8 +1636,10 @@ class gdaAttack:
                         guessedRows/totalRows)
                 self._addToAtkRes('numConfidenceRatios', job['spec'], 1)
                 self._atrs['tableStats']['totalRows'] = totalRows
-        elif self._cr == 'linkability':
-            claimIsCorrect = self._checkLinkability(reply['answer'])
+        else:
+            # For linkability, the confidence is always 1/2
+            self._addToAtkRes('sumConfidenceRatios', job['spec'], 0.5)
+            self._addToAtkRes('numConfidenceRatios', job['spec'], 1)
         if 'q' in job:
             del job['q']
         return(job)
@@ -1709,7 +1738,10 @@ class gdaAttack:
 
             No score book-keeping is done here. An analyst may make
             any number of queries without impacting the GDA score. <br/>
-            Input parameters formatted the same as with `askAttack()`"""
+            `query` is a dictionary with two values: <br/>
+            `query['sql'] contains the SQL query. <br/>
+            `query['db'] determines which database is queried, and
+            is one of 'rawDb', 'anonDb', or (if linkability), 'pubDb'."""
 
         self._exploreCounter += 1
         if self._vb: print(f"Calling {__name__}.askExplore with query '{query}', count {self._exploreCounter}")
@@ -1719,10 +1751,12 @@ class gdaAttack:
         job['q'] = self._exploreQ
         qCopy['cache'] = cache
         job['queries'] = [qCopy]
-        if qCopy['db'] == 'raw':
+        if qCopy['db'] == 'rawDb' or qCopy['db'] == 'raw':
             self._rawQ.put(job)
-        else:
+        elif qCopy['db'] == 'anonDb' or qCopy['db'] == 'anon':
             self._anonQ.put(job)
+        else:
+            self._pubQ.put(job)
 
     def getExplore(self):
         """ Wait for and gather results of prior askExplore() calls.
@@ -1851,6 +1885,10 @@ class gdaAttack:
                 if (val == 'singlingOut' or val == 'inference' or
                         val == 'linkability'):
                     self._cr = val
+                else:
+                    print("""Error: criteria must be one of 'singlingOut',
+                             'inference', or 'linkability'""")
+                    sys.exit('')
 
     def _setupLocalCacheDB(self):
         path = self._p['locCacheDir'] + "/" + self._p['name'] + ".db"
@@ -1877,12 +1915,15 @@ class gdaAttack:
     def _setupThreadsAndQueues(self):
         self._anonThreads = []
         self._rawThreads = []
+        self._pubThreads = []
         self._exploreQ = queue.Queue()
         self._knowledgeQ = queue.Queue()
         self._attackQ = queue.Queue()
         self._claimQ = queue.Queue()
         self._guessQ = queue.Queue()
         self._rawQ = queue.Queue()
+        if self._cr == 'linkability':
+            self._pubQ = queue.Queue()
         self._anonQ = queue.Queue()
         backQ = queue.Queue()
         for i in range(self._p['numRawDbThreads']):
@@ -1897,7 +1938,16 @@ class gdaAttack:
             t = threading.Thread(target=self._dbWorker,kwargs=d)
             t.start()
             self._anonThreads.append(t)
+        if self._cr == 'linkability':
+            for i in range(self._p['numPubDbThreads']):
+                d = dict(db=self._p['pubDb'],q=self._pubQ,
+                         kind='pub',backQ=backQ)
+                t = threading.Thread(target=self._dbWorker,kwargs=d)
+                t.start()
+                self._pubThreads.append(t)
         num = (self._p['numRawDbThreads'] + self._p['numAnonDbThreads'])
+        if self._cr == 'linkability':
+            num += self._p['numPubDbThreads']
         # Make sure all the worker threads are ready
         for i in range(num):
             msg = backQ.get()
@@ -1949,7 +1999,7 @@ class gdaAttack:
         del query['cache']
         # Check the cache for the answer
         # Note that at this point query is a dict
-        # containing the sql, the db (raw or anon),
+        # containing the sql, the db (raw, anon, or pub),
         # and any tags that the source added
         cachedReply = None
         if cache:
@@ -2000,8 +2050,9 @@ class gdaAttack:
         return 1
 
     def _checkLinkability(self,ans):
+        # The test is the same as with singling out
         # Returns 1 if linkability claim correct, else returns 0
-        pass
+        return self._checkSinglingOut(ans)
 
     def _checkSinglingOut(self,ans):
         # column 0 must be UID
@@ -2045,7 +2096,14 @@ class gdaAttack:
         dbInfo = self._getDatabaseInfo(self._p['rawDb'])
         if not dbInfo:
             sys.exit('')
-        if (self._p['numRawDbThreads'] + self._p['numAnonDbThreads']) > 50:
+        if self._cr == 'linkability':
+            dbInfo = self._getDatabaseInfo(self._p['pubDb'])
+            if not dbInfo:
+                sys.exit('')
+        numThreads = self._p['numRawDbThreads'] + self._p['numAnonDbThreads']
+        if self._cr == 'linkability':
+            numThreads += self._p['numPubDbThreads']
+        if numThreads > 50:
             sys.exit("Error: Can't have more than 50 threads total")
 
     def _getCache(self,cur,query):
@@ -2100,11 +2158,14 @@ class gdaAttack:
 
     def _makeSqlFromSpec(self,spec):
         sql = "select "
-        numGuess = len(spec['guess'])
         if 'known' in spec:
             numKnown = len(spec['known'])
         else:
             numKnown = 0
+        if 'guess' in spec:
+            numGuess = len(spec['guess'])
+        else:
+            numGuess = 0
         if self._cr == 'inference':
             sql += str(f"{spec['uid']}, ")
             for i in range(numGuess):
@@ -2123,7 +2184,7 @@ class gdaAttack:
                     sql += " "
                 else:
                     sql += "and "
-        elif self._cr == 'singlingOut':
+        elif self._cr == 'singlingOut' or self._cr == 'linkability':
             sql += str(f"{spec['uid']} from {self._p['table']} where ")
             for i in range(numKnown):
                 sql += str(f"{spec['known'][i]['col']} = ")
@@ -2135,12 +2196,6 @@ class gdaAttack:
                     sql += " "
                 else:
                     sql += "and "
-        elif self._cr == 'linkability':
-            pass
-        else:
-            print("""Error: criteria must be one of 'singlingOut',
-                     'inference', or 'linkability'""")
-            self.cleanUp(cleanUpCache=False,doExit=True)
         return sql
 
     def _makeSqlConfFromSpec(self,spec):
@@ -2160,7 +2215,8 @@ class gdaAttack:
             # normally be a cached result)
             sql = str(f"select count(*) from {self._p['table']}")
             sqls.append(sql)
-        if self._cr == 'linkability':
+        elif self._cr == 'linkability':
+            # nothing happens for linkability
             pass
         return sqls
 
@@ -2186,6 +2242,8 @@ class gdaAttack:
         self._atrs['attack']['attackName'] = self._p['name']
         self._atrs['attack']['rawDb'] = self._p['rawDb']
         self._atrs['attack']['anonDb'] = self._p['anonDb']
+        if self._cr == 'linkability':
+            self._atrs['attack']['pubDb'] = self._p['anonDb']
         self._atrs['attack']['criteria'] = self._p['criteria']
         self._atrs['attack']['table'] = self._p['table']
         # add parameters for the database machine itself
@@ -2193,6 +2251,11 @@ class gdaAttack:
         self._atrs['attack']['rawHost'] = db['host']
         self._atrs['attack']['rawDbName'] = db['dbname']
         self._atrs['attack']['rawPort'] = db['port']
+        if self._cr == 'linkability':
+            db = self._getDatabaseInfo(self._p['pubDb'])
+            self._atrs['attack']['pubHost'] = db['host']
+            self._atrs['attack']['pubDbName'] = db['dbname']
+            self._atrs['attack']['pubPort'] = db['port']
         db = self._getDatabaseInfo(self._p['anonDb'])
         self._atrs['attack']['anonHost'] = db['host']
         self._atrs['attack']['anonDbName'] = db['dbname']
@@ -2288,6 +2351,7 @@ just hang.</p></div>
     _p = dict(name='',
                rawDb = '',
                anonDb = '',
+               pubDb = '',
                criteria = '',
                table = '',
                flushCache=False,
@@ -2296,6 +2360,7 @@ just hang.</p></div>
                locCacheDir = "cacheDBs",
                numRawDbThreads = 3,
                numAnonDbThreads = 3,
+               numPubDbThreads = 3,
                dbConfig = "../config/myDatabases.json",
               )
     _requiredParams = ['name','rawDb','anonDb','criteria']
@@ -2304,9 +2369,11 @@ just hang.</p></div>
     # Threads
     _rawThreads = []
     _anonThreads = []
+    _pubThreads = []
     # Queues read by database threads _rawThreads and _anonThreads
     _rawQ = None
     _anonQ = None
+    _pubQ = None
     # Queues read by various caller functions
     _exploreQ = None
     _knowledgeQ = None
@@ -2334,11 +2401,13 @@ just hang.</p></div>
             `param['rawDb']`: The label for the DB to be used as the
             raw (non-anonymized) DB. From `param['dbConfig']`. <br/>
             `param['anonDb']`: The label for the DB to be used as the
-            anonymized) DB. <br/>
+            anonymized DB. <br/>
             `param['criteria']`: The criteria by which the attack should
             determined to succeed or fail. Must be one of 'singlingOut',
             'inference', or 'linkability' <br/>
             Following are the optional parameters: <br/>
+            `param['pubDb']`: The label for the DB to be used as the
+            publicly known DB in linkability attacks. <br/>
             `param['table']`: The table to be attacked. Must be present
             if the DB has more than one table. <br/>
             `param['flushCache']`: Set to true if you want the cache of
@@ -2351,6 +2420,8 @@ just hang.</p></div>
             that can be made to the raw DB. Default 3. <br/>
             `param['numAnonDbThreads']`: The number of parallel queries
             that can be made to the anon DB. Default 3. <br/>
+            `param['numPubDbThreads']`: The number of parallel queries
+            that can be made to the public linkability DB. Default 3. <br/>
             `param['dbConfig']`: The path to the json DB configureation
             file. <br/>
             `param['verbose']`: Set to True for verbose output.
@@ -2393,10 +2464,14 @@ just hang.</p></div>
         # Setup the threads and queues
         self._setupThreadsAndQueues()
         numThreads = threading.active_count()
-        if numThreads != (self._p['numRawDbThreads'] +
-                self._p['numAnonDbThreads'] + 1):
+        expectedThreads = (self._p['numRawDbThreads'] +
+                self._p['numAnonDbThreads'] + 1)
+        if len(self._p['pubDb']) > 0:
+            expectedThreads += self._p['numPubDbThreads']
+        if numThreads != expectedThreads:
             print(f"Error: Some thread(s) died "
-                   "(count {numThreads}). Aborting.")
+                   "(count {numThreads}, expected {expectedThreads}). "
+                   "Aborting.")
             self.cleanUp(cleanUpCache=False,doExit=True)
 
     def getResults(self):
@@ -2451,26 +2526,34 @@ just hang.</p></div>
         # if a thread is gone or hanging, not all signals will get read)
         for i in range(self._p['numRawDbThreads']):
             self._rawQ.put(None)
+        for i in range(self._p['numAnonDbThreads']):
             self._anonQ.put(None)
         for t in self._rawThreads + self._anonThreads:
             if t.isAlive(): t.join()
+        if len(self._p['pubDb']) > 0:
+            if self._pubQ.empty() != True:
+                print("Warning, trying to clean up when pub queue not empty!")
+            for i in range(self._p['numPubDbThreads']):
+                self._pubQ.put(None)
+            for t in self._pubThreads:
+                if t.isAlive(): t.join()
         if cleanUpCache:
             self._removeLocalCacheDB()
         if doExit:
             sys.exit(exitMsg)
 
     def askClaim(self,spec,cache=True,claim=True):
-        """Generate Claim query for raw database.
+        """Generate Claim query for raw and optionally pub databases.
 
-        Making a claim results in a query to the raw database, to check
+        Making a claim results in a query to the raw database, and if
+        linkability attack, the pub database, to check
         the correctness of the claim. Multiple calls to this method will
         cause the corresponding queries to be queued up, so `askClaim()`
         returns immediately. `getClaim()` harvests one claim result. <br/>
         Set `claim=False` if this claim should not be applied to the
         confidence improvement score. In this case, the probability score
         will instead be reduced accordingly. <br/>
-        When the attack criteria is 'singlingOut' or 'inference', the `spec`
-        is formatted as follows: <br/>
+        The `spec` is formatted as follows: <br/>
 
             `{'uid':'uidCol',
              `'known':[{'col':'colName','val':'value'},...],`
@@ -2478,10 +2561,11 @@ just hang.</p></div>
             `}`
 
         `spec['known']` are the columns and values the attacker already knows
-        (i.e. with prior knowledge) <br/>
+        (i.e. with prior knowledge). Optional. <br/>
         `spec['guess']` are the columns and values the attacker doesn't know,
-        but rather is trying to predict. <br/>
-        `spec['uid']` is the name of the UID column. <br/>
+        but rather is trying to predict. Mandatory for 'singling out'
+        and 'inference'. Optional for 'linkabiblity' <br/>
+        `spec['uid']` is the name of the UID column. Mandatory. <br/>
         Answers are cached <br/>
         Returns immediately"""
         if self._vb: print(f"Calling {__name__}.askClaim with spec '{spec}', count {self._claimCounter}")
@@ -2535,26 +2619,28 @@ just hang.</p></div>
         self._claimCounter -= 1
         job['stillToCome'] = self._claimCounter
         self._addToAtkRes('claimTrials', job['spec'], 1)
+        # The claim is tested against the first reply
+        reply = job['replies'][0]
+        job['claimResult'] = 'Wrong'
+        if claim:
+            self._addToAtkRes('claimMade', job['spec'], 1)
+        if 'error' in reply:
+            self._addToAtkRes('claimError', job['spec'], 1)
+            job['claimResult'] = 'Error'
+        else:
+            if self._cr == 'singlingOut':
+                claimIsCorrect = self._checkSinglingOut(reply['answer'])
+            elif self._cr == 'inference':
+                claimIsCorrect = self._checkInference(reply['answer'])
+            elif self._cr == 'linkability':
+                claimIsCorrect = self._checkLinkability(reply['answer'])
+            if claim == 1 and claimIsCorrect:
+                self._addToAtkRes('claimCorrect', job['spec'], 1)
+                job['claimResult'] = 'Correct'
+            elif claim == 0 and claimIsCorrect:
+                self._addToAtkRes('claimPassCorrect', job['spec'], 1)
+                job['claimResult'] = 'Correct'
         if self._cr == 'singlingOut' or self._cr == 'inference':
-            # The claim is tested against the first reply
-            reply = job['replies'][0]
-            job['claimResult'] = 'Wrong'
-            if claim:
-                self._addToAtkRes('claimMade', job['spec'], 1)
-            if 'error' in reply:
-                self._addToAtkRes('claimError', job['spec'], 1)
-                job['claimResult'] = 'Error'
-            else:
-                if self._cr == 'singlingOut':
-                    claimIsCorrect = self._checkSinglingOut(reply['answer'])
-                elif self._cr == 'inference':
-                    claimIsCorrect = self._checkInference(reply['answer'])
-                if claim == 1 and claimIsCorrect:
-                    self._addToAtkRes('claimCorrect', job['spec'], 1)
-                    job['claimResult'] = 'Correct'
-                elif claim == 0 and claimIsCorrect:
-                    self._addToAtkRes('claimPassCorrect', job['spec'], 1)
-                    job['claimResult'] = 'Correct'
             # Then measure confidence against the second and third replies
             if 'answer' in job['replies'][1]:
                 if job['replies'][1]['answer']:
@@ -2579,8 +2665,10 @@ just hang.</p></div>
                         guessedRows/totalRows)
                 self._addToAtkRes('numConfidenceRatios', job['spec'], 1)
                 self._atrs['tableStats']['totalRows'] = totalRows
-        elif self._cr == 'linkability':
-            claimIsCorrect = self._checkLinkability(reply['answer'])
+        else:
+            # For linkability, the confidence is always 1/2
+            self._addToAtkRes('sumConfidenceRatios', job['spec'], 0.5)
+            self._addToAtkRes('numConfidenceRatios', job['spec'], 1)
         if 'q' in job:
             del job['q']
         return(job)
@@ -2679,7 +2767,10 @@ just hang.</p></div>
 
             No score book-keeping is done here. An analyst may make
             any number of queries without impacting the GDA score. <br/>
-            Input parameters formatted the same as with `askAttack()`"""
+            `query` is a dictionary with two values: <br/>
+            `query['sql'] contains the SQL query. <br/>
+            `query['db'] determines which database is queried, and
+            is one of 'rawDb', 'anonDb', or (if linkability), 'pubDb'."""
 
         self._exploreCounter += 1
         if self._vb: print(f"Calling {__name__}.askExplore with query '{query}', count {self._exploreCounter}")
@@ -2689,10 +2780,12 @@ just hang.</p></div>
         job['q'] = self._exploreQ
         qCopy['cache'] = cache
         job['queries'] = [qCopy]
-        if qCopy['db'] == 'raw':
+        if qCopy['db'] == 'rawDb' or qCopy['db'] == 'raw':
             self._rawQ.put(job)
-        else:
+        elif qCopy['db'] == 'anonDb' or qCopy['db'] == 'anon':
             self._anonQ.put(job)
+        else:
+            self._pubQ.put(job)
 
     def getExplore(self):
         """ Wait for and gather results of prior askExplore() calls.
@@ -2821,6 +2914,10 @@ just hang.</p></div>
                 if (val == 'singlingOut' or val == 'inference' or
                         val == 'linkability'):
                     self._cr = val
+                else:
+                    print("""Error: criteria must be one of 'singlingOut',
+                             'inference', or 'linkability'""")
+                    sys.exit('')
 
     def _setupLocalCacheDB(self):
         path = self._p['locCacheDir'] + "/" + self._p['name'] + ".db"
@@ -2847,12 +2944,15 @@ just hang.</p></div>
     def _setupThreadsAndQueues(self):
         self._anonThreads = []
         self._rawThreads = []
+        self._pubThreads = []
         self._exploreQ = queue.Queue()
         self._knowledgeQ = queue.Queue()
         self._attackQ = queue.Queue()
         self._claimQ = queue.Queue()
         self._guessQ = queue.Queue()
         self._rawQ = queue.Queue()
+        if self._cr == 'linkability':
+            self._pubQ = queue.Queue()
         self._anonQ = queue.Queue()
         backQ = queue.Queue()
         for i in range(self._p['numRawDbThreads']):
@@ -2867,7 +2967,16 @@ just hang.</p></div>
             t = threading.Thread(target=self._dbWorker,kwargs=d)
             t.start()
             self._anonThreads.append(t)
+        if self._cr == 'linkability':
+            for i in range(self._p['numPubDbThreads']):
+                d = dict(db=self._p['pubDb'],q=self._pubQ,
+                         kind='pub',backQ=backQ)
+                t = threading.Thread(target=self._dbWorker,kwargs=d)
+                t.start()
+                self._pubThreads.append(t)
         num = (self._p['numRawDbThreads'] + self._p['numAnonDbThreads'])
+        if self._cr == 'linkability':
+            num += self._p['numPubDbThreads']
         # Make sure all the worker threads are ready
         for i in range(num):
             msg = backQ.get()
@@ -2919,7 +3028,7 @@ just hang.</p></div>
         del query['cache']
         # Check the cache for the answer
         # Note that at this point query is a dict
-        # containing the sql, the db (raw or anon),
+        # containing the sql, the db (raw, anon, or pub),
         # and any tags that the source added
         cachedReply = None
         if cache:
@@ -2970,8 +3079,9 @@ just hang.</p></div>
         return 1
 
     def _checkLinkability(self,ans):
+        # The test is the same as with singling out
         # Returns 1 if linkability claim correct, else returns 0
-        pass
+        return self._checkSinglingOut(ans)
 
     def _checkSinglingOut(self,ans):
         # column 0 must be UID
@@ -3015,7 +3125,14 @@ just hang.</p></div>
         dbInfo = self._getDatabaseInfo(self._p['rawDb'])
         if not dbInfo:
             sys.exit('')
-        if (self._p['numRawDbThreads'] + self._p['numAnonDbThreads']) > 50:
+        if self._cr == 'linkability':
+            dbInfo = self._getDatabaseInfo(self._p['pubDb'])
+            if not dbInfo:
+                sys.exit('')
+        numThreads = self._p['numRawDbThreads'] + self._p['numAnonDbThreads']
+        if self._cr == 'linkability':
+            numThreads += self._p['numPubDbThreads']
+        if numThreads > 50:
             sys.exit("Error: Can't have more than 50 threads total")
 
     def _getCache(self,cur,query):
@@ -3070,11 +3187,14 @@ just hang.</p></div>
 
     def _makeSqlFromSpec(self,spec):
         sql = "select "
-        numGuess = len(spec['guess'])
         if 'known' in spec:
             numKnown = len(spec['known'])
         else:
             numKnown = 0
+        if 'guess' in spec:
+            numGuess = len(spec['guess'])
+        else:
+            numGuess = 0
         if self._cr == 'inference':
             sql += str(f"{spec['uid']}, ")
             for i in range(numGuess):
@@ -3093,7 +3213,7 @@ just hang.</p></div>
                     sql += " "
                 else:
                     sql += "and "
-        elif self._cr == 'singlingOut':
+        elif self._cr == 'singlingOut' or self._cr == 'linkability':
             sql += str(f"{spec['uid']} from {self._p['table']} where ")
             for i in range(numKnown):
                 sql += str(f"{spec['known'][i]['col']} = ")
@@ -3105,12 +3225,6 @@ just hang.</p></div>
                     sql += " "
                 else:
                     sql += "and "
-        elif self._cr == 'linkability':
-            pass
-        else:
-            print("""Error: criteria must be one of 'singlingOut',
-                     'inference', or 'linkability'""")
-            self.cleanUp(cleanUpCache=False,doExit=True)
         return sql
 
     def _makeSqlConfFromSpec(self,spec):
@@ -3130,7 +3244,8 @@ just hang.</p></div>
             # normally be a cached result)
             sql = str(f"select count(*) from {self._p['table']}")
             sqls.append(sql)
-        if self._cr == 'linkability':
+        elif self._cr == 'linkability':
+            # nothing happens for linkability
             pass
         return sqls
 
@@ -3156,6 +3271,8 @@ just hang.</p></div>
         self._atrs['attack']['attackName'] = self._p['name']
         self._atrs['attack']['rawDb'] = self._p['rawDb']
         self._atrs['attack']['anonDb'] = self._p['anonDb']
+        if self._cr == 'linkability':
+            self._atrs['attack']['pubDb'] = self._p['anonDb']
         self._atrs['attack']['criteria'] = self._p['criteria']
         self._atrs['attack']['table'] = self._p['table']
         # add parameters for the database machine itself
@@ -3163,6 +3280,11 @@ just hang.</p></div>
         self._atrs['attack']['rawHost'] = db['host']
         self._atrs['attack']['rawDbName'] = db['dbname']
         self._atrs['attack']['rawPort'] = db['port']
+        if self._cr == 'linkability':
+            db = self._getDatabaseInfo(self._p['pubDb'])
+            self._atrs['attack']['pubHost'] = db['host']
+            self._atrs['attack']['pubDbName'] = db['dbname']
+            self._atrs['attack']['pubPort'] = db['port']
         db = self._getDatabaseInfo(self._p['anonDb'])
         self._atrs['attack']['anonHost'] = db['host']
         self._atrs['attack']['anonDbName'] = db['dbname']
@@ -3251,11 +3373,13 @@ the cache is discovered using this name. <br/>
 <code>param['rawDb']</code>: The label for the DB to be used as the
 raw (non-anonymized) DB. From <code>param['dbConfig']</code>. <br/>
 <code>param['anonDb']</code>: The label for the DB to be used as the
-anonymized) DB. <br/>
+anonymized DB. <br/>
 <code>param['criteria']</code>: The criteria by which the attack should
 determined to succeed or fail. Must be one of 'singlingOut',
 'inference', or 'linkability' <br/>
 Following are the optional parameters: <br/>
+<code>param['pubDb']</code>: The label for the DB to be used as the
+publicly known DB in linkability attacks. <br/>
 <code>param['table']</code>: The table to be attacked. Must be present
 if the DB has more than one table. <br/>
 <code>param['flushCache']</code>: Set to true if you want the cache of
@@ -3268,6 +3392,8 @@ Default 'cacheDBs'. <br/>
 that can be made to the raw DB. Default 3. <br/>
 <code>param['numAnonDbThreads']</code>: The number of parallel queries
 that can be made to the anon DB. Default 3. <br/>
+<code>param['numPubDbThreads']</code>: The number of parallel queries
+that can be made to the public linkability DB. Default 3. <br/>
 <code>param['dbConfig']</code>: The path to the json DB configureation
 file. <br/>
 <code>param['verbose']</code>: Set to True for verbose output.</p></div>
@@ -3283,11 +3409,13 @@ file. <br/>
         `param['rawDb']`: The label for the DB to be used as the
         raw (non-anonymized) DB. From `param['dbConfig']`. <br/>
         `param['anonDb']`: The label for the DB to be used as the
-        anonymized) DB. <br/>
+        anonymized DB. <br/>
         `param['criteria']`: The criteria by which the attack should
         determined to succeed or fail. Must be one of 'singlingOut',
         'inference', or 'linkability' <br/>
         Following are the optional parameters: <br/>
+        `param['pubDb']`: The label for the DB to be used as the
+        publicly known DB in linkability attacks. <br/>
         `param['table']`: The table to be attacked. Must be present
         if the DB has more than one table. <br/>
         `param['flushCache']`: Set to true if you want the cache of
@@ -3300,6 +3428,8 @@ file. <br/>
         that can be made to the raw DB. Default 3. <br/>
         `param['numAnonDbThreads']`: The number of parallel queries
         that can be made to the anon DB. Default 3. <br/>
+        `param['numPubDbThreads']`: The number of parallel queries
+        that can be made to the public linkability DB. Default 3. <br/>
         `param['dbConfig']`: The path to the json DB configureation
         file. <br/>
         `param['verbose']`: Set to True for verbose output.
@@ -3338,10 +3468,14 @@ file. <br/>
     # Setup the threads and queues
     self._setupThreadsAndQueues()
     numThreads = threading.active_count()
-    if numThreads != (self._p['numRawDbThreads'] +
-            self._p['numAnonDbThreads'] + 1):
+    expectedThreads = (self._p['numRawDbThreads'] +
+            self._p['numAnonDbThreads'] + 1)
+    if len(self._p['pubDb']) > 0:
+        expectedThreads += self._p['numPubDbThreads']
+    if numThreads != expectedThreads:
         print(f"Error: Some thread(s) died "
-               "(count {numThreads}). Aborting.")
+               "(count {numThreads}, expected {expectedThreads}). "
+               "Aborting.")
         self.cleanUp(cleanUpCache=False,doExit=True)
 </code></pre>
   </div>
@@ -3392,51 +3526,53 @@ file. <br/>
 
     
   
-    <div class="desc"><p>Generate Claim query for raw database.</p>
-<p>Making a claim results in a query to the raw database, to check
+    <div class="desc"><p>Generate Claim query for raw and optionally pub databases.</p>
+<p>Making a claim results in a query to the raw database, and if
+linkability attack, the pub database, to check
 the correctness of the claim. Multiple calls to this method will
 cause the corresponding queries to be queued up, so <code>askClaim()</code>
 returns immediately. <code>getClaim()</code> harvests one claim result. <br/>
 Set <code>claim=False</code> if this claim should not be applied to the
 confidence improvement score. In this case, the probability score
 will instead be reduced accordingly. <br/>
-When the attack criteria is 'singlingOut' or 'inference', the <code>spec</code>
-is formatted as follows: <br/></p>
+The <code>spec</code> is formatted as follows: <br/></p>
 <pre><code>`{'uid':'uidCol',
  `'known':[{'col':'colName','val':'value'},...],`
  `'guess':[{'col':'colName','val':'value'},...],`
 `}`
 </code></pre>
 <p><code>spec['known']</code> are the columns and values the attacker already knows
-(i.e. with prior knowledge) <br/>
+(i.e. with prior knowledge). Optional. <br/>
 <code>spec['guess']</code> are the columns and values the attacker doesn't know,
-but rather is trying to predict. <br/>
-<code>spec['uid']</code> is the name of the UID column. <br/>
+but rather is trying to predict. Mandatory for 'singling out'
+and 'inference'. Optional for 'linkabiblity' <br/>
+<code>spec['uid']</code> is the name of the UID column. Mandatory. <br/>
 Answers are cached <br/>
 Returns immediately</p></div>
   <div class="source_cont">
   <p class="source_link"><a href="javascript:void(0);" onclick="toggle('source-gdaScore.gdaAttack.askClaim', this);">Show source &equiv;</a></p>
   <div id="source-gdaScore.gdaAttack.askClaim" class="source">
     <pre><code>def askClaim(self,spec,cache=True,claim=True):
-    """Generate Claim query for raw database.
-    Making a claim results in a query to the raw database, to check
+    """Generate Claim query for raw and optionally pub databases.
+    Making a claim results in a query to the raw database, and if
+    linkability attack, the pub database, to check
     the correctness of the claim. Multiple calls to this method will
     cause the corresponding queries to be queued up, so `askClaim()`
     returns immediately. `getClaim()` harvests one claim result. <br/>
     Set `claim=False` if this claim should not be applied to the
     confidence improvement score. In this case, the probability score
     will instead be reduced accordingly. <br/>
-    When the attack criteria is 'singlingOut' or 'inference', the `spec`
-    is formatted as follows: <br/>
+    The `spec` is formatted as follows: <br/>
         `{'uid':'uidCol',
          `'known':[{'col':'colName','val':'value'},...],`
          `'guess':[{'col':'colName','val':'value'},...],`
         `}`
     `spec['known']` are the columns and values the attacker already knows
-    (i.e. with prior knowledge) <br/>
+    (i.e. with prior knowledge). Optional. <br/>
     `spec['guess']` are the columns and values the attacker doesn't know,
-    but rather is trying to predict. <br/>
-    `spec['uid']` is the name of the UID column. <br/>
+    but rather is trying to predict. Mandatory for 'singling out'
+    and 'inference'. Optional for 'linkabiblity' <br/>
+    `spec['uid']` is the name of the UID column. Mandatory. <br/>
     Answers are cached <br/>
     Returns immediately"""
     if self._vb: print(f"Calling {__name__}.askClaim with spec '{spec}', count {self._claimCounter}")
@@ -3472,7 +3608,9 @@ Returns immediately</p></div>
     <div class="desc"><p>Generate and queue up an exploritory query for database</p>
 <p>No score book-keeping is done here. An analyst may make
 any number of queries without impacting the GDA score. <br/>
-Input parameters formatted the same as with <code>askAttack()</code></p></div>
+<code>query</code> is a dictionary with two values: <br/>
+<code>query['sql'] contains the SQL query. &lt;br/&gt;</code>query['db'] determines which database is queried, and
+is one of 'rawDb', 'anonDb', or (if linkability), 'pubDb'.</p></div>
   <div class="source_cont">
   <p class="source_link"><a href="javascript:void(0);" onclick="toggle('source-gdaScore.gdaAttack.askExplore', this);">Show source &equiv;</a></p>
   <div id="source-gdaScore.gdaAttack.askExplore" class="source">
@@ -3480,7 +3618,10 @@ Input parameters formatted the same as with <code>askAttack()</code></p></div>
     """ Generate and queue up an exploritory query for database
         No score book-keeping is done here. An analyst may make
         any number of queries without impacting the GDA score. <br/>
-        Input parameters formatted the same as with `askAttack()`"""
+        `query` is a dictionary with two values: <br/>
+        `query['sql'] contains the SQL query. <br/>
+        `query['db'] determines which database is queried, and
+        is one of 'rawDb', 'anonDb', or (if linkability), 'pubDb'."""
     self._exploreCounter += 1
     if self._vb: print(f"Calling {__name__}.askExplore with query '{query}', count {self._exploreCounter}")
     # Make a copy of the query for passing around
@@ -3489,10 +3630,12 @@ Input parameters formatted the same as with <code>askAttack()</code></p></div>
     job['q'] = self._exploreQ
     qCopy['cache'] = cache
     job['queries'] = [qCopy]
-    if qCopy['db'] == 'raw':
+    if qCopy['db'] == 'rawDb' or qCopy['db'] == 'raw':
         self._rawQ.put(job)
-    else:
+    elif qCopy['db'] == 'anonDb' or qCopy['db'] == 'anon':
         self._anonQ.put(job)
+    else:
+        self._pubQ.put(job)
 </code></pre>
   </div>
 </div>
@@ -3569,9 +3712,17 @@ if that isn't what you want.</p></div>
     # if a thread is gone or hanging, not all signals will get read)
     for i in range(self._p['numRawDbThreads']):
         self._rawQ.put(None)
+    for i in range(self._p['numAnonDbThreads']):
         self._anonQ.put(None)
     for t in self._rawThreads + self._anonThreads:
         if t.isAlive(): t.join()
+    if len(self._p['pubDb']) > 0:
+        if self._pubQ.empty() != True:
+            print("Warning, trying to clean up when pub queue not empty!")
+        for i in range(self._p['numPubDbThreads']):
+            self._pubQ.put(None)
+        for t in self._pubThreads:
+            if t.isAlive(): t.join()
     if cleanUpCache:
         self._removeLocalCacheDB()
     if doExit:
@@ -3733,26 +3884,28 @@ claims submitted by <code>askClaim()</code> have been returned.</p></div>
     self._claimCounter -= 1
     job['stillToCome'] = self._claimCounter
     self._addToAtkRes('claimTrials', job['spec'], 1)
+    # The claim is tested against the first reply
+    reply = job['replies'][0]
+    job['claimResult'] = 'Wrong'
+    if claim:
+        self._addToAtkRes('claimMade', job['spec'], 1)
+    if 'error' in reply:
+        self._addToAtkRes('claimError', job['spec'], 1)
+        job['claimResult'] = 'Error'
+    else:
+        if self._cr == 'singlingOut':
+            claimIsCorrect = self._checkSinglingOut(reply['answer'])
+        elif self._cr == 'inference':
+            claimIsCorrect = self._checkInference(reply['answer'])
+        elif self._cr == 'linkability':
+            claimIsCorrect = self._checkLinkability(reply['answer'])
+        if claim == 1 and claimIsCorrect:
+            self._addToAtkRes('claimCorrect', job['spec'], 1)
+            job['claimResult'] = 'Correct'
+        elif claim == 0 and claimIsCorrect:
+            self._addToAtkRes('claimPassCorrect', job['spec'], 1)
+            job['claimResult'] = 'Correct'
     if self._cr == 'singlingOut' or self._cr == 'inference':
-        # The claim is tested against the first reply
-        reply = job['replies'][0]
-        job['claimResult'] = 'Wrong'
-        if claim:
-            self._addToAtkRes('claimMade', job['spec'], 1)
-        if 'error' in reply:
-            self._addToAtkRes('claimError', job['spec'], 1)
-            job['claimResult'] = 'Error'
-        else:
-            if self._cr == 'singlingOut':
-                claimIsCorrect = self._checkSinglingOut(reply['answer'])
-            elif self._cr == 'inference':
-                claimIsCorrect = self._checkInference(reply['answer'])
-            if claim == 1 and claimIsCorrect:
-                self._addToAtkRes('claimCorrect', job['spec'], 1)
-                job['claimResult'] = 'Correct'
-            elif claim == 0 and claimIsCorrect:
-                self._addToAtkRes('claimPassCorrect', job['spec'], 1)
-                job['claimResult'] = 'Correct'
         # Then measure confidence against the second and third replies
         if 'answer' in job['replies'][1]:
             if job['replies'][1]['answer']:
@@ -3777,8 +3930,10 @@ claims submitted by <code>askClaim()</code> have been returned.</p></div>
                     guessedRows/totalRows)
             self._addToAtkRes('numConfidenceRatios', job['spec'], 1)
             self._atrs['tableStats']['totalRows'] = totalRows
-    elif self._cr == 'linkability':
-        claimIsCorrect = self._checkLinkability(reply['answer'])
+    else:
+        # For linkability, the confidence is always 1/2
+        self._addToAtkRes('sumConfidenceRatios', job['spec'], 0.5)
+        self._addToAtkRes('numConfidenceRatios', job['spec'], 1)
     if 'q' in job:
         del job['q']
     return(job)
@@ -4266,6 +4421,10 @@ WARNING: this code is fragile, and can fail ungracefully.</p></div>
             sc['confidenceImprovement'] /= len(weakCols)
             sc['claimProbability'] /= len(weakCols)
             sc['susceptibility'] /= self._ar['tableStats']['numColumns']
+        else:
+            # No claims could even be made
+            sc['susceptibility'] = 0
+            sc['confidenceImprovement'] = 0
         # define knowledge needed as the number of knowledge cells requested
         # over the total number of cells for which cliams were made
         # likewise "work" can be defined as the number of attack cells
@@ -4276,12 +4435,12 @@ WARNING: this code is fragile, and can fail ungracefully.</p></div>
             sc['workNeeded'] = ( 
                     self._ar['base']['attackCells'] / totalClaimsMade)
         else:
-            sc['knowledgeNeeded'] = 0
-            sc['workNeeded'] = 0
+            sc['knowledgeNeeded'] = None
+            sc['workNeeded'] = None
         # Compute an overall defense score from the other scores
         score = self._getSuscListScore(sc['susceptibility'])
         if score > sc['defense']:
-            sc['defence'] = score
+            sc['defense'] = score
         return
 
     def _getWeakestDefenseColumns(self, numColumns):

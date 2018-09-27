@@ -1096,29 +1096,41 @@ def plotGdaScore(score,util,fileName='',form=[],show=True):
     # For work needed, best case is 1 cell learned for 1 cell attacked,
     # so this given value 1. We can set worst case arbitrarily at say
     # 10000, which gets value 0 on graph. We can plot log scale. So:
-    work = s['workNeeded']
-    if work < 1:
-        work = 1
-    if work > 10000:
-        work = 10000
-    work = math.log10(work)
-    maxWork = math.log10(maxWork)
-    work /= maxWork
+    workBar = s['workNeeded']
+    if workBar != None:
+        if workBar < 1:
+            workBar = 1
+        if workBar > 10000:
+            workBar = 10000
+        workBar = math.log10(workBar)
+        maxWork = math.log10(maxWork)
+        workBar /= maxWork
+    else:
+        # This will cause the work bar to not appear
+        workBar = maxY
+        doLabel[work] = 0
 
     if util:
         accuracy = util['accuracy']
         coverage = util['coverage']
     else:
         # This basically results in no bars for utility
-        accuracy = 0.5
-        coverage = 0.5
+        accuracy = maxY
+        coverage = maxY
+
+    if s['knowledgeNeeded'] != None:
+        knowledgeNeeded = s['knowledgeNeeded']
+    else:
+        # results in no bar for knowledgeNeeded
+        knowledgeNeeded = maxY
+        doLabel[know] = 0
 
     heights = [maxY - accuracy,
             maxY - coverage,
             maxY - s['confidenceImprovement'],
             maxY - s['claimProbability'],
-            s['knowledgeNeeded'] - maxY,
-            work - maxY,
+            knowledgeNeeded - maxY,
+            workBar - maxY,
             maxY - s['susceptibility']]
     # Plot the bars
     plt.bar(centers, heights, width = widths, color = colors)
@@ -1295,29 +1307,41 @@ Set <code>show</code> to True if you want the graph displayed</p></div>
     # For work needed, best case is 1 cell learned for 1 cell attacked,
     # so this given value 1. We can set worst case arbitrarily at say
     # 10000, which gets value 0 on graph. We can plot log scale. So:
-    work = s['workNeeded']
-    if work < 1:
-        work = 1
-    if work > 10000:
-        work = 10000
-    work = math.log10(work)
-    maxWork = math.log10(maxWork)
-    work /= maxWork
+    workBar = s['workNeeded']
+    if workBar != None:
+        if workBar < 1:
+            workBar = 1
+        if workBar > 10000:
+            workBar = 10000
+        workBar = math.log10(workBar)
+        maxWork = math.log10(maxWork)
+        workBar /= maxWork
+    else:
+        # This will cause the work bar to not appear
+        workBar = maxY
+        doLabel[work] = 0
 
     if util:
         accuracy = util['accuracy']
         coverage = util['coverage']
     else:
         # This basically results in no bars for utility
-        accuracy = 0.5
-        coverage = 0.5
+        accuracy = maxY
+        coverage = maxY
+
+    if s['knowledgeNeeded'] != None:
+        knowledgeNeeded = s['knowledgeNeeded']
+    else:
+        # results in no bar for knowledgeNeeded
+        knowledgeNeeded = maxY
+        doLabel[know] = 0
 
     heights = [maxY - accuracy,
             maxY - coverage,
             maxY - s['confidenceImprovement'],
             maxY - s['claimProbability'],
-            s['knowledgeNeeded'] - maxY,
-            work - maxY,
+            knowledgeNeeded - maxY,
+            workBar - maxY,
             maxY - s['susceptibility']]
     # Plot the bars
     plt.bar(centers, heights, width = widths, color = colors)
