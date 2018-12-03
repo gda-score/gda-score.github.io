@@ -975,6 +975,7 @@ table {
   <ul>
     <li class="mono"><a href="#gdaUtilities.comma_ize">comma_ize</a></li>
     <li class="mono"><a href="#gdaUtilities.finishGdaAttack">finishGdaAttack</a></li>
+    <li class="mono"><a href="#gdaUtilities.getInterpolatedValue">getInterpolatedValue</a></li>
     <li class="mono"><a href="#gdaUtilities.makeGroupBy">makeGroupBy</a></li>
     <li class="mono"><a href="#gdaUtilities.setupGdaAttackParameters">setupGdaAttackParameters</a></li>
   </ul>
@@ -1001,6 +1002,7 @@ table {
     <pre><code>import sys
 import json
 import pprint
+import math
 
 def setupGdaAttackParameters(cmdArgs, criteria=''):
     """ Basic prep for input and output of running an attack
@@ -1126,8 +1128,60 @@ def makeGroupBy(columns):
     clause = 'GROUP BY '
     for val in range(1,len(columns)+1):
         clause += str(f"{val}, ")
-    ret = clause[0:-2]
+    # Strip off the last comma and add a space
+    ret = clause[0:-2] + ' '
     return ret
+
+def getInterpolatedValue(val0,val1,scoreGrid):
+    """Compute interpolated value from grid of mapping tuples
+    
+       This routine takes as input a list of tuples ("grid") of the form
+       `(val0,val1,score)`. It maps (val0,val1) values to a corresponding
+       score. It returns a score that is interpolated between the
+       scores in the grid. An example of such a grid can be found in
+       gdaScore.py, called `_defenseGrid1`. Note that val0 and val1 must
+       go in descending order as shown. Input values that are above the
+       highest val0 and val1 values will take the score of the first
+       entry. Input values that are below the lowest val0 and val1 will
+       take the score of the last entry.
+    """
+    scoreAbove = -1
+    scoreBelow = -1
+    for tup in scoreGrid:
+        tup0 = tup[0]
+        tup1 = tup[1]
+        score = tup[2]
+        if val0 <= tup0 and val1 <= tup1:
+            tup0Above = tup0
+            tup1Above = tup1
+            scoreAbove = score
+    for tup in reversed(scoreGrid):
+        tup0 = tup[0]
+        tup1 = tup[1]
+        score = tup[2]
+        if val0 >= tup0 and val1 >= tup1:
+            tup0Below = tup0
+            tup1Below = tup1
+            scoreBelow = score
+    if scoreAbove == -1 and scoreBelow == -1:
+        return None
+    if scoreAbove == -1:
+        return scoreBelow
+    if scoreBelow == -1:
+        return scoreAbove
+    if scoreAbove == scoreBelow:
+        return scoreAbove
+    # Interpolate by treating as right triangle with tup0 as y and
+    # tup1 as x
+    yLegFull = tup0Above - tup0Below
+    xLegFull = tup1Above - tup1Below
+    hypoFull = math.sqrt((xLegFull ** 2) + (yLegFull ** 2))
+    yLegPart =  val0 - tup0Below
+    xLegPart =  val1 - tup1Below
+    hypoPart = math.sqrt((xLegPart ** 2) + (yLegPart ** 2))
+    frac = hypoPart / hypoFull
+    interpScore = scoreBelow - (frac * (scoreBelow - scoreAbove))
+    return interpScore
 </code></pre>
   </div>
 
@@ -1213,6 +1267,84 @@ def makeGroupBy(columns):
   
       
   <div class="item">
+    <div class="name def" id="gdaUtilities.getInterpolatedValue">
+    <p>def <span class="ident">getInterpolatedValue</span>(</p><p>val0, val1, scoreGrid)</p>
+    </div>
+    
+
+    
+  
+    <div class="desc"><p>Compute interpolated value from grid of mapping tuples</p>
+<p>This routine takes as input a list of tuples ("grid") of the form
+<code>(val0,val1,score)</code>. It maps (val0,val1) values to a corresponding
+score. It returns a score that is interpolated between the
+scores in the grid. An example of such a grid can be found in
+gdaScore.py, called <code>_defenseGrid1</code>. Note that val0 and val1 must
+go in descending order as shown. Input values that are above the
+highest val0 and val1 values will take the score of the first
+entry. Input values that are below the lowest val0 and val1 will
+take the score of the last entry.</p></div>
+  <div class="source_cont">
+  <p class="source_link"><a href="javascript:void(0);" onclick="toggle('source-gdaUtilities.getInterpolatedValue', this);">Show source &equiv;</a></p>
+  <div id="source-gdaUtilities.getInterpolatedValue" class="source">
+    <pre><code>def getInterpolatedValue(val0,val1,scoreGrid):
+    """Compute interpolated value from grid of mapping tuples
+    
+       This routine takes as input a list of tuples ("grid") of the form
+       `(val0,val1,score)`. It maps (val0,val1) values to a corresponding
+       score. It returns a score that is interpolated between the
+       scores in the grid. An example of such a grid can be found in
+       gdaScore.py, called `_defenseGrid1`. Note that val0 and val1 must
+       go in descending order as shown. Input values that are above the
+       highest val0 and val1 values will take the score of the first
+       entry. Input values that are below the lowest val0 and val1 will
+       take the score of the last entry.
+    """
+    scoreAbove = -1
+    scoreBelow = -1
+    for tup in scoreGrid:
+        tup0 = tup[0]
+        tup1 = tup[1]
+        score = tup[2]
+        if val0 <= tup0 and val1 <= tup1:
+            tup0Above = tup0
+            tup1Above = tup1
+            scoreAbove = score
+    for tup in reversed(scoreGrid):
+        tup0 = tup[0]
+        tup1 = tup[1]
+        score = tup[2]
+        if val0 >= tup0 and val1 >= tup1:
+            tup0Below = tup0
+            tup1Below = tup1
+            scoreBelow = score
+    if scoreAbove == -1 and scoreBelow == -1:
+        return None
+    if scoreAbove == -1:
+        return scoreBelow
+    if scoreBelow == -1:
+        return scoreAbove
+    if scoreAbove == scoreBelow:
+        return scoreAbove
+    # Interpolate by treating as right triangle with tup0 as y and
+    # tup1 as x
+    yLegFull = tup0Above - tup0Below
+    xLegFull = tup1Above - tup1Below
+    hypoFull = math.sqrt((xLegFull ** 2) + (yLegFull ** 2))
+    yLegPart =  val0 - tup0Below
+    xLegPart =  val1 - tup1Below
+    hypoPart = math.sqrt((xLegPart ** 2) + (yLegPart ** 2))
+    frac = hypoPart / hypoFull
+    interpScore = scoreBelow - (frac * (scoreBelow - scoreAbove))
+    return interpScore
+</code></pre>
+  </div>
+</div>
+
+  </div>
+  
+      
+  <div class="item">
     <div class="name def" id="gdaUtilities.makeGroupBy">
     <p>def <span class="ident">makeGroupBy</span>(</p><p>columns)</p>
     </div>
@@ -1230,7 +1362,8 @@ def makeGroupBy(columns):
     clause = 'GROUP BY '
     for val in range(1,len(columns)+1):
         clause += str(f"{val}, ")
-    ret = clause[0:-2]
+    # Strip off the last comma and add a space
+    ret = clause[0:-2] + ' '
     return ret
 </code></pre>
   </div>
