@@ -975,8 +975,10 @@ table {
   <ul>
     <li class="mono"><a href="#gdaUtilities.comma_ize">comma_ize</a></li>
     <li class="mono"><a href="#gdaUtilities.finishGdaAttack">finishGdaAttack</a></li>
+    <li class="mono"><a href="#gdaUtilities.getDatabaseInfo">getDatabaseInfo</a></li>
     <li class="mono"><a href="#gdaUtilities.getInterpolatedValue">getInterpolatedValue</a></li>
     <li class="mono"><a href="#gdaUtilities.makeGroupBy">makeGroupBy</a></li>
+    <li class="mono"><a href="#gdaUtilities.makeInNotNullConditions">makeInNotNullConditions</a></li>
     <li class="mono"><a href="#gdaUtilities.setupGdaAttackParameters">setupGdaAttackParameters</a></li>
   </ul>
 
@@ -1003,8 +1005,32 @@ table {
 import json
 import pprint
 import math
+import os
 
-def setupGdaAttackParameters(cmdArgs, criteria=''):
+def getDatabaseInfo(dbName):
+    ''' Retrieves the database info from the database config file.
+
+        The path to the database config file must be hard-coded here.
+    '''
+    # This is kludgey, but try to find the location of the config file
+    # relative to where we are. The root directory here must be above
+    # the directory from which the code is being executed
+    dbConfig = "code/common/config/myDatabases.json"
+    path = dbConfig
+    for x in range(5):
+        path = "../" + path
+        if os.path.isfile(path):
+            break
+        pass
+    fh = open(path, "r")
+    j = json.load(fh)
+    if dbName in j:
+        return j[dbName]
+    else:
+        print(f"Error: Database '{dbName}' not found in file {self._p['dbConfig']}")
+        return None
+
+def setupGdaAttackParameters(cmdArgs, criteria='', attackType=''):
     """ Basic prep for input and output of running an attack
 
         `cmdArgs` is the command line args list (`sys.argv`) <br/>
@@ -1018,6 +1044,7 @@ def setupGdaAttackParameters(cmdArgs, criteria=''):
         `par['resultsPath']`: Path to filename where results should
         be stored. <br/>
         `par['criteria']: if one of the calling parameters.
+        `par['attackType']: if one of the calling parameters.
     """
 
     pp = pprint.PrettyPrinter(indent=4)
@@ -1048,6 +1075,10 @@ def setupGdaAttackParameters(cmdArgs, criteria=''):
             if not criteria:
                 sys.exit("ERROR: criteria must be specified")
             pm['criteria'] = criteria
+        if 'attackType' not in pm or len(pm['attackType']) == 0:
+            if not attackType:
+                sys.exit("ERROR: attackType must be specified")
+            pm['attackType'] = attackType
     
         if 'name' not in pm or len(pm['name']) == 0:
             baseName = str(f"{sys.argv[0]}")
@@ -1063,6 +1094,8 @@ def setupGdaAttackParameters(cmdArgs, criteria=''):
                 baseName += str(f".{pm['table']}")
         else:
             baseName = pm['name']
+        # Remove any spaces in the base name
+        baseName.replace(" ","")
         pm['name'] = baseName
     
         resultsDir = "attackResults";
@@ -1130,6 +1163,16 @@ def makeGroupBy(columns):
         clause += str(f"{val}, ")
     # Strip off the last comma and add a space
     ret = clause[0:-2] + ' '
+    return ret
+
+def makeInNotNullConditions(columns):
+    """ Make the WHERE clause conditions of IS NOT NULL for columns"""
+
+    clause = ''
+    for col in columns:
+        clause += str(f" {col} IS NOT NULL AND ")
+    # Strip off the last AND
+    ret = clause[0:-4]
     return ret
 
 def getInterpolatedValue(val0,val1,scoreGrid):
@@ -1267,6 +1310,48 @@ def getInterpolatedValue(val0,val1,scoreGrid):
   
       
   <div class="item">
+    <div class="name def" id="gdaUtilities.getDatabaseInfo">
+    <p>def <span class="ident">getDatabaseInfo</span>(</p><p>dbName)</p>
+    </div>
+    
+
+    
+  
+    <div class="desc"><p>Retrieves the database info from the database config file.</p>
+<p>The path to the database config file must be hard-coded here.</p></div>
+  <div class="source_cont">
+  <p class="source_link"><a href="javascript:void(0);" onclick="toggle('source-gdaUtilities.getDatabaseInfo', this);">Show source &equiv;</a></p>
+  <div id="source-gdaUtilities.getDatabaseInfo" class="source">
+    <pre><code>def getDatabaseInfo(dbName):
+    ''' Retrieves the database info from the database config file.
+
+        The path to the database config file must be hard-coded here.
+    '''
+    # This is kludgey, but try to find the location of the config file
+    # relative to where we are. The root directory here must be above
+    # the directory from which the code is being executed
+    dbConfig = "code/common/config/myDatabases.json"
+    path = dbConfig
+    for x in range(5):
+        path = "../" + path
+        if os.path.isfile(path):
+            break
+        pass
+    fh = open(path, "r")
+    j = json.load(fh)
+    if dbName in j:
+        return j[dbName]
+    else:
+        print(f"Error: Database '{dbName}' not found in file {self._p['dbConfig']}")
+        return None
+</code></pre>
+  </div>
+</div>
+
+  </div>
+  
+      
+  <div class="item">
     <div class="name def" id="gdaUtilities.getInterpolatedValue">
     <p>def <span class="ident">getInterpolatedValue</span>(</p><p>val0, val1, scoreGrid)</p>
     </div>
@@ -1373,8 +1458,36 @@ take the score of the last entry.</p></div>
   
       
   <div class="item">
+    <div class="name def" id="gdaUtilities.makeInNotNullConditions">
+    <p>def <span class="ident">makeInNotNullConditions</span>(</p><p>columns)</p>
+    </div>
+    
+
+    
+  
+    <div class="desc"><p>Make the WHERE clause conditions of IS NOT NULL for columns</p></div>
+  <div class="source_cont">
+  <p class="source_link"><a href="javascript:void(0);" onclick="toggle('source-gdaUtilities.makeInNotNullConditions', this);">Show source &equiv;</a></p>
+  <div id="source-gdaUtilities.makeInNotNullConditions" class="source">
+    <pre><code>def makeInNotNullConditions(columns):
+    """ Make the WHERE clause conditions of IS NOT NULL for columns"""
+
+    clause = ''
+    for col in columns:
+        clause += str(f" {col} IS NOT NULL AND ")
+    # Strip off the last AND
+    ret = clause[0:-4]
+    return ret
+</code></pre>
+  </div>
+</div>
+
+  </div>
+  
+      
+  <div class="item">
     <div class="name def" id="gdaUtilities.setupGdaAttackParameters">
-    <p>def <span class="ident">setupGdaAttackParameters</span>(</p><p>cmdArgs, criteria=&#39;&#39;)</p>
+    <p>def <span class="ident">setupGdaAttackParameters</span>(</p><p>cmdArgs, criteria=&#39;&#39;, attackType=&#39;&#39;)</p>
     </div>
     
 
@@ -1391,11 +1504,11 @@ Adds the following to the returned data structure (<code>par</code>) <br/>
 Else <code>False</code> <br/>
 <code>par['resultsPath']</code>: Path to filename where results should
 be stored. <br/>
-`par['criteria']: if one of the calling parameters.</p></div>
+<code>par['criteria']: if one of the calling parameters.</code>par['attackType']: if one of the calling parameters.</p></div>
   <div class="source_cont">
   <p class="source_link"><a href="javascript:void(0);" onclick="toggle('source-gdaUtilities.setupGdaAttackParameters', this);">Show source &equiv;</a></p>
   <div id="source-gdaUtilities.setupGdaAttackParameters" class="source">
-    <pre><code>def setupGdaAttackParameters(cmdArgs, criteria=''):
+    <pre><code>def setupGdaAttackParameters(cmdArgs, criteria='', attackType=''):
     """ Basic prep for input and output of running an attack
 
         `cmdArgs` is the command line args list (`sys.argv`) <br/>
@@ -1409,6 +1522,7 @@ be stored. <br/>
         `par['resultsPath']`: Path to filename where results should
         be stored. <br/>
         `par['criteria']: if one of the calling parameters.
+        `par['attackType']: if one of the calling parameters.
     """
 
     pp = pprint.PrettyPrinter(indent=4)
@@ -1439,6 +1553,10 @@ be stored. <br/>
             if not criteria:
                 sys.exit("ERROR: criteria must be specified")
             pm['criteria'] = criteria
+        if 'attackType' not in pm or len(pm['attackType']) == 0:
+            if not attackType:
+                sys.exit("ERROR: attackType must be specified")
+            pm['attackType'] = attackType
     
         if 'name' not in pm or len(pm['name']) == 0:
             baseName = str(f"{sys.argv[0]}")
@@ -1454,6 +1572,8 @@ be stored. <br/>
                 baseName += str(f".{pm['table']}")
         else:
             baseName = pm['name']
+        # Remove any spaces in the base name
+        baseName.replace(" ","")
         pm['name'] = baseName
     
         resultsDir = "attackResults";

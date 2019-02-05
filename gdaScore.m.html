@@ -1049,7 +1049,7 @@ import pprint
 import math
 import datetime
 sys.path.append('../common')
-from gdaUtilities import getInterpolatedValue
+from gdaUtilities import getInterpolatedValue,getDatabaseInfo
 
 class gdaScores:
     """Computes the final GDA Score from the scores returned by gdaAttack
@@ -1299,7 +1299,7 @@ class gdaAttack:
                rawDb = '',
                anonDb = '',
                pubDb = '',
-               criteria = '',
+               criteria = 'singlingOut',
                table = '',
                uid = 'uid',
                flushCache=False,
@@ -1309,9 +1309,8 @@ class gdaAttack:
                numRawDbThreads = 3,
                numAnonDbThreads = 3,
                numPubDbThreads = 3,
-               dbConfig = "common/config/myDatabases.json",
               )
-    _requiredParams = ['name','rawDb','anonDb','criteria']
+    _requiredParams = ['name','rawDb']
 
     # ---------- Private internal state
     # Threads
@@ -1347,13 +1346,14 @@ class gdaAttack:
             `param['name']`: The name of the attack. Make it unique, because
             the cache is discovered using this name. <br/>
             `param['rawDb']`: The label for the DB to be used as the
-            raw (non-anonymized) DB. From `param['dbConfig']`. <br/>
-            `param['anonDb']`: The label for the DB to be used as the
-            anonymized DB. <br/>
+            raw (non-anonymized) DB. <br/>
+            Following are the optional parameters: <br/>
             `param['criteria']`: The criteria by which the attack should
             determined to succeed or fail. Must be one of 'singlingOut',
-            'inference', or 'linkability' <br/>
-            Following are the optional parameters: <br/>
+            'inference', or 'linkability'. Default is 'singlingOut'. <br/>
+            `param['anonDb']`: The label for the DB to be used as the
+            anonymized DB. (Is automatically set to `param['rawDb']` if
+            not set.) <br/>
             `param['pubDb']`: The label for the DB to be used as the
             publicly known DB in linkability attacks. <br/>
             `param['table']`: The table to be attacked. Must be present
@@ -1372,8 +1372,6 @@ class gdaAttack:
             that can be made to the anon DB. Default 3. <br/>
             `param['numPubDbThreads']`: The number of parallel queries
             that can be made to the public linkability DB. Default 3. <br/>
-            `param['dbConfig']`: The path to the json DB configuration
-            file from the repo head directory. <br/>
             `param['verbose']`: Set to True for verbose output.
         """
 
@@ -1621,7 +1619,7 @@ class gdaAttack:
             del job['q']
         return(job)
 
-    def askAttack(self,query,cache=1):
+    def askAttack(self,query,cache=True):
         """ Generate and queue up an attack query for database.
 
             `query` is a dictionary with (currently) one value: <br/>
@@ -1669,7 +1667,7 @@ class gdaAttack:
             self._atrs['base']['attackCells'] += reply['cells']
         return(reply)
 
-    def askKnowledge(self,query,cache=0):
+    def askKnowledge(self,query,cache=True):
         """ Generate and queue up a prior knowledge query for database
 
             The class keeps track of how many prior knowledge cells were
@@ -1711,14 +1709,14 @@ class gdaAttack:
             self._atrs['base']['knowledgeCells'] += reply['cells']
         return(reply)
 
-    def askExplore(self,query,cache=0):
+    def askExplore(self,query,cache=True):
         """ Generate and queue up an exploritory query for database
 
             No score book-keeping is done here. An analyst may make
             any number of queries without impacting the GDA score. <br/>
             `query` is a dictionary with two values: <br/>
-            `query['sql'] contains the SQL query. <br/>
-            `query['db'] determines which database is queried, and
+            `query['sql']` contains the SQL query. <br/>
+            `query['db']` determines which database is queried, and
             is one of 'rawDb', 'anonDb', or (if linkability), 'pubDb'."""
 
         self._exploreCounter += 1
@@ -1773,7 +1771,7 @@ class gdaAttack:
             tableName = self._p['table']
 
         # Establish connection to database
-        db = self._getDatabaseInfo(self._p['rawDb'])
+        db = getDatabaseInfo(self._p['rawDb'])
         connStr = str(f"host={db['host']} port={db['port']} dbname={db['dbname']} user={db['user']} password={db['password']}")
         conn = psycopg2.connect(connStr)
         cur = conn.cursor()
@@ -1792,7 +1790,7 @@ class gdaAttack:
                       from {tableName}
                       group by 1
                       order by 2 desc
-                      limit 100""")
+                      limit 200""")
         try:
             cur.execute(sql)
         except psycopg2.Error as e:
@@ -1802,8 +1800,8 @@ class gdaAttack:
         ret = []
         for row in ans:
             # row[0] is the value, row[1] is the count
-            if (((row[1]/numUid) > 0.01) and
-                    (row[1] >= 100)):
+            if (((row[1]/numUid) > 0.002) and
+                    (row[1] >= 50)):
                 ret.append((row[0],row[1]))
         conn.close()
         return ret
@@ -1832,17 +1830,24 @@ class gdaAttack:
     def getTableCharacteristics(self,tableName=''):
         """Returns the full contents of the table characteristics
         
-           Essentially a 'SELECT *' on the tab_char table <br/>
-           Return value is a dict with structure: <br/>
+           Return value is a dict indexed by column name: <br/>
 
-               { 'columnNames': [(name,type),...]
-                 'table': [(col1,col2,col3,...),...]
+               { '<colName>':
+                   {
+                       'av_rows_per_vals': 3.93149,
+                       'av_uids_per_val': 0.468698,
+                       'column_label': 'continuous',
+                       'column_name': 'dropoff_latitude',
+                       'column_type': 'real',
+                       'max': '898.29382000000000',
+                       'min': '-0.56333297000000',
+                       'num_distinct_vals': 24216,
+                       'num_rows': 95205,
+                       'num_uids': 11350,
+                       'std_rows_per_val': 10.8547,
+                       'std_uids_per_val': 4.09688},
+                   }
                }
-
-           Where: <br/>
-           `columnNames` contains the names and types of the columns in
-           order of `col1`, `col2`, ..., and <br/>
-           `table` is the contents of the tab_char table
 
         """
         if len(tableName) == 0:
@@ -1854,7 +1859,7 @@ class gdaAttack:
         tableName += '_char'
 
         # Establish connection to database
-        db = self._getDatabaseInfo(self._p['rawDb'])
+        db = getDatabaseInfo(self._p['rawDb'])
         connStr = str(f"host={db['host']} port={db['port']} dbname={db['dbname']} user={db['user']} password={db['password']}")
         conn = psycopg2.connect(connStr)
         cur = conn.cursor()
@@ -1869,8 +1874,11 @@ class gdaAttack:
         except psycopg2.Error as e:
             print(f"Error: getTableCharacteristics() query: '{e}'")
             self.cleanUp(cleanUpCache=False,doExit=True)
-        ans = cur.fetchall()
-        ret['columnNames'] = copy.deepcopy(ans)
+        cols = cur.fetchall()
+        # Make index for column name (should be 0, but just to be sure)
+        for colNameIndex in range(len(cols)):
+            if cols[colNameIndex][0] == 'column_name':
+                break
 
         # Query it for table contents
         sql = str(f"SELECT * FROM {tableName}")
@@ -1880,7 +1888,11 @@ class gdaAttack:
             print(f"Error: getTableCharacteristics() query: '{e}'")
             self.cleanUp(cleanUpCache=False,doExit=True)
         ans = cur.fetchall()
-        ret['table'] = copy.deepcopy(ans)
+        for row in ans:
+            colName = row[colNameIndex]
+            ret[colName] = {}
+            for i in range(len(row)):
+                ret[colName][cols[i][0]] = row[i]
         conn.close()
         return ret
 
@@ -1897,7 +1909,7 @@ class gdaAttack:
             tableName = self._p['table']
 
         # Establish connection to database
-        db = self._getDatabaseInfo(self._p[dbType])
+        db = getDatabaseInfo(self._p[dbType])
         if db['type'] != 'postgres' and db['type'] != 'aircloak':
             print(f"DB type '{db['type']}' must be 'postgres' or 'aircloak'")
             return None
@@ -1930,7 +1942,7 @@ class gdaAttack:
         Table names returned as list, unless error then return None"""
 
         # Establish connection to database
-        db = self._getDatabaseInfo(self._p[dbType])
+        db = getDatabaseInfo(self._p[dbType])
         if db['type'] != 'postgres' and db['type'] != 'aircloak':
             print(f"DB type '{db['type']}' must be 'postgres' or 'aircloak'")
             return None
@@ -1970,6 +1982,7 @@ class gdaAttack:
             if key == "verbose":
                 if val != False:
                     self._vb = True
+            # Check criteria
             if key == "criteria":
                 if (val == 'singlingOut' or val == 'inference' or
                         val == 'linkability'):
@@ -2047,7 +2060,7 @@ class gdaAttack:
     def _dbWorker(self,db,q,kind,backQ):
         if self._vb: print(f"Starting {__name__}.dbWorker:{db,kind}")
         me = threading.current_thread()
-        d = self._getDatabaseInfo(db)
+        d = getDatabaseInfo(db)
         # Establish connection to database
         connStr = str(f"host={d['host']} port={d['port']} dbname={d['dbname']} user={d['user']} password={d['password']}")
         if self._vb: print(f"    {me}: Connect to DB with DSN '{connStr}'")
@@ -2168,34 +2181,20 @@ class gdaAttack:
         numCells = numColumns * numRows
         return numCells
 
-    def _getDatabaseInfo(self,dbName):
-        # this is kludgey, but try to find the location of the config file
-        # relative to where we are
-        path = self._p['dbConfig']
-        for x in range(5):
-            path = "../" + path
-            if os.path.isfile(path):
-                break
-            pass
-        fh = open(path, "r")
-        j = json.load(fh)
-        if dbName in j:
-            return j[dbName]
-        else:
-            print(f"Error: Database '{dbName}' not found in file {self._p['dbConfig']}")
-            return False
-
     def _doParamChecks(self):
-        dbInfo = self._getDatabaseInfo(self._p['anonDb'])
-        if not dbInfo:
-            sys.exit('')
-        dbInfo = self._getDatabaseInfo(self._p['rawDb'])
-        if not dbInfo:
-            sys.exit('')
+        dbInfoRaw = getDatabaseInfo(self._p['rawDb'])
+        if not dbInfoRaw:
+            sys.exit('rawDb now found in database config')
+        if len(self._p['anonDb']) == 0:
+            self._p['anonDb'] = self._p['rawDb']
+        else:
+            dbInfoAnon = getDatabaseInfo(self._p['anonDb'])
+            if not dbInfoAnon:
+                sys.exit('anonDb not found in database config')
         if self._cr == 'linkability':
-            dbInfo = self._getDatabaseInfo(self._p['pubDb'])
+            dbInfo = getDatabaseInfo(self._p['pubDb'])
             if not dbInfo:
-                sys.exit('')
+                sys.exit('Must specify pubDb if criteria is linkability')
         numThreads = self._p['numRawDbThreads'] + self._p['numAnonDbThreads']
         if self._cr == 'linkability':
             numThreads += self._p['numPubDbThreads']
@@ -2357,16 +2356,16 @@ class gdaAttack:
         self._atrs['attack']['criteria'] = self._p['criteria']
         self._atrs['attack']['table'] = self._p['table']
         # add parameters for the database machine itself
-        db = self._getDatabaseInfo(self._p['rawDb'])
+        db = getDatabaseInfo(self._p['rawDb'])
         self._atrs['attack']['rawHost'] = db['host']
         self._atrs['attack']['rawDbName'] = db['dbname']
         self._atrs['attack']['rawPort'] = db['port']
         if self._cr == 'linkability':
-            db = self._getDatabaseInfo(self._p['pubDb'])
+            db = getDatabaseInfo(self._p['pubDb'])
             self._atrs['attack']['pubHost'] = db['host']
             self._atrs['attack']['pubDbName'] = db['dbname']
             self._atrs['attack']['pubPort'] = db['port']
-        db = self._getDatabaseInfo(self._p['anonDb'])
+        db = getDatabaseInfo(self._p['anonDb'])
         self._atrs['attack']['anonHost'] = db['host']
         self._atrs['attack']['anonDbName'] = db['dbname']
         self._atrs['attack']['anonPort'] = db['port']
@@ -2462,7 +2461,7 @@ just hang.</p></div>
                rawDb = '',
                anonDb = '',
                pubDb = '',
-               criteria = '',
+               criteria = 'singlingOut',
                table = '',
                uid = 'uid',
                flushCache=False,
@@ -2472,9 +2471,8 @@ just hang.</p></div>
                numRawDbThreads = 3,
                numAnonDbThreads = 3,
                numPubDbThreads = 3,
-               dbConfig = "common/config/myDatabases.json",
               )
-    _requiredParams = ['name','rawDb','anonDb','criteria']
+    _requiredParams = ['name','rawDb']
 
     # ---------- Private internal state
     # Threads
@@ -2510,13 +2508,14 @@ just hang.</p></div>
             `param['name']`: The name of the attack. Make it unique, because
             the cache is discovered using this name. <br/>
             `param['rawDb']`: The label for the DB to be used as the
-            raw (non-anonymized) DB. From `param['dbConfig']`. <br/>
-            `param['anonDb']`: The label for the DB to be used as the
-            anonymized DB. <br/>
+            raw (non-anonymized) DB. <br/>
+            Following are the optional parameters: <br/>
             `param['criteria']`: The criteria by which the attack should
             determined to succeed or fail. Must be one of 'singlingOut',
-            'inference', or 'linkability' <br/>
-            Following are the optional parameters: <br/>
+            'inference', or 'linkability'. Default is 'singlingOut'. <br/>
+            `param['anonDb']`: The label for the DB to be used as the
+            anonymized DB. (Is automatically set to `param['rawDb']` if
+            not set.) <br/>
             `param['pubDb']`: The label for the DB to be used as the
             publicly known DB in linkability attacks. <br/>
             `param['table']`: The table to be attacked. Must be present
@@ -2535,8 +2534,6 @@ just hang.</p></div>
             that can be made to the anon DB. Default 3. <br/>
             `param['numPubDbThreads']`: The number of parallel queries
             that can be made to the public linkability DB. Default 3. <br/>
-            `param['dbConfig']`: The path to the json DB configuration
-            file from the repo head directory. <br/>
             `param['verbose']`: Set to True for verbose output.
         """
 
@@ -2784,7 +2781,7 @@ just hang.</p></div>
             del job['q']
         return(job)
 
-    def askAttack(self,query,cache=1):
+    def askAttack(self,query,cache=True):
         """ Generate and queue up an attack query for database.
 
             `query` is a dictionary with (currently) one value: <br/>
@@ -2832,7 +2829,7 @@ just hang.</p></div>
             self._atrs['base']['attackCells'] += reply['cells']
         return(reply)
 
-    def askKnowledge(self,query,cache=0):
+    def askKnowledge(self,query,cache=True):
         """ Generate and queue up a prior knowledge query for database
 
             The class keeps track of how many prior knowledge cells were
@@ -2874,14 +2871,14 @@ just hang.</p></div>
             self._atrs['base']['knowledgeCells'] += reply['cells']
         return(reply)
 
-    def askExplore(self,query,cache=0):
+    def askExplore(self,query,cache=True):
         """ Generate and queue up an exploritory query for database
 
             No score book-keeping is done here. An analyst may make
             any number of queries without impacting the GDA score. <br/>
             `query` is a dictionary with two values: <br/>
-            `query['sql'] contains the SQL query. <br/>
-            `query['db'] determines which database is queried, and
+            `query['sql']` contains the SQL query. <br/>
+            `query['db']` determines which database is queried, and
             is one of 'rawDb', 'anonDb', or (if linkability), 'pubDb'."""
 
         self._exploreCounter += 1
@@ -2936,7 +2933,7 @@ just hang.</p></div>
             tableName = self._p['table']
 
         # Establish connection to database
-        db = self._getDatabaseInfo(self._p['rawDb'])
+        db = getDatabaseInfo(self._p['rawDb'])
         connStr = str(f"host={db['host']} port={db['port']} dbname={db['dbname']} user={db['user']} password={db['password']}")
         conn = psycopg2.connect(connStr)
         cur = conn.cursor()
@@ -2955,7 +2952,7 @@ just hang.</p></div>
                       from {tableName}
                       group by 1
                       order by 2 desc
-                      limit 100""")
+                      limit 200""")
         try:
             cur.execute(sql)
         except psycopg2.Error as e:
@@ -2965,8 +2962,8 @@ just hang.</p></div>
         ret = []
         for row in ans:
             # row[0] is the value, row[1] is the count
-            if (((row[1]/numUid) > 0.01) and
-                    (row[1] >= 100)):
+            if (((row[1]/numUid) > 0.002) and
+                    (row[1] >= 50)):
                 ret.append((row[0],row[1]))
         conn.close()
         return ret
@@ -2995,17 +2992,24 @@ just hang.</p></div>
     def getTableCharacteristics(self,tableName=''):
         """Returns the full contents of the table characteristics
         
-           Essentially a 'SELECT *' on the tab_char table <br/>
-           Return value is a dict with structure: <br/>
+           Return value is a dict indexed by column name: <br/>
 
-               { 'columnNames': [(name,type),...]
-                 'table': [(col1,col2,col3,...),...]
+               { '<colName>':
+                   {
+                       'av_rows_per_vals': 3.93149,
+                       'av_uids_per_val': 0.468698,
+                       'column_label': 'continuous',
+                       'column_name': 'dropoff_latitude',
+                       'column_type': 'real',
+                       'max': '898.29382000000000',
+                       'min': '-0.56333297000000',
+                       'num_distinct_vals': 24216,
+                       'num_rows': 95205,
+                       'num_uids': 11350,
+                       'std_rows_per_val': 10.8547,
+                       'std_uids_per_val': 4.09688},
+                   }
                }
-
-           Where: <br/>
-           `columnNames` contains the names and types of the columns in
-           order of `col1`, `col2`, ..., and <br/>
-           `table` is the contents of the tab_char table
 
         """
         if len(tableName) == 0:
@@ -3017,7 +3021,7 @@ just hang.</p></div>
         tableName += '_char'
 
         # Establish connection to database
-        db = self._getDatabaseInfo(self._p['rawDb'])
+        db = getDatabaseInfo(self._p['rawDb'])
         connStr = str(f"host={db['host']} port={db['port']} dbname={db['dbname']} user={db['user']} password={db['password']}")
         conn = psycopg2.connect(connStr)
         cur = conn.cursor()
@@ -3032,8 +3036,11 @@ just hang.</p></div>
         except psycopg2.Error as e:
             print(f"Error: getTableCharacteristics() query: '{e}'")
             self.cleanUp(cleanUpCache=False,doExit=True)
-        ans = cur.fetchall()
-        ret['columnNames'] = copy.deepcopy(ans)
+        cols = cur.fetchall()
+        # Make index for column name (should be 0, but just to be sure)
+        for colNameIndex in range(len(cols)):
+            if cols[colNameIndex][0] == 'column_name':
+                break
 
         # Query it for table contents
         sql = str(f"SELECT * FROM {tableName}")
@@ -3043,7 +3050,11 @@ just hang.</p></div>
             print(f"Error: getTableCharacteristics() query: '{e}'")
             self.cleanUp(cleanUpCache=False,doExit=True)
         ans = cur.fetchall()
-        ret['table'] = copy.deepcopy(ans)
+        for row in ans:
+            colName = row[colNameIndex]
+            ret[colName] = {}
+            for i in range(len(row)):
+                ret[colName][cols[i][0]] = row[i]
         conn.close()
         return ret
 
@@ -3060,7 +3071,7 @@ just hang.</p></div>
             tableName = self._p['table']
 
         # Establish connection to database
-        db = self._getDatabaseInfo(self._p[dbType])
+        db = getDatabaseInfo(self._p[dbType])
         if db['type'] != 'postgres' and db['type'] != 'aircloak':
             print(f"DB type '{db['type']}' must be 'postgres' or 'aircloak'")
             return None
@@ -3093,7 +3104,7 @@ just hang.</p></div>
         Table names returned as list, unless error then return None"""
 
         # Establish connection to database
-        db = self._getDatabaseInfo(self._p[dbType])
+        db = getDatabaseInfo(self._p[dbType])
         if db['type'] != 'postgres' and db['type'] != 'aircloak':
             print(f"DB type '{db['type']}' must be 'postgres' or 'aircloak'")
             return None
@@ -3133,6 +3144,7 @@ just hang.</p></div>
             if key == "verbose":
                 if val != False:
                     self._vb = True
+            # Check criteria
             if key == "criteria":
                 if (val == 'singlingOut' or val == 'inference' or
                         val == 'linkability'):
@@ -3210,7 +3222,7 @@ just hang.</p></div>
     def _dbWorker(self,db,q,kind,backQ):
         if self._vb: print(f"Starting {__name__}.dbWorker:{db,kind}")
         me = threading.current_thread()
-        d = self._getDatabaseInfo(db)
+        d = getDatabaseInfo(db)
         # Establish connection to database
         connStr = str(f"host={d['host']} port={d['port']} dbname={d['dbname']} user={d['user']} password={d['password']}")
         if self._vb: print(f"    {me}: Connect to DB with DSN '{connStr}'")
@@ -3331,34 +3343,20 @@ just hang.</p></div>
         numCells = numColumns * numRows
         return numCells
 
-    def _getDatabaseInfo(self,dbName):
-        # this is kludgey, but try to find the location of the config file
-        # relative to where we are
-        path = self._p['dbConfig']
-        for x in range(5):
-            path = "../" + path
-            if os.path.isfile(path):
-                break
-            pass
-        fh = open(path, "r")
-        j = json.load(fh)
-        if dbName in j:
-            return j[dbName]
-        else:
-            print(f"Error: Database '{dbName}' not found in file {self._p['dbConfig']}")
-            return False
-
     def _doParamChecks(self):
-        dbInfo = self._getDatabaseInfo(self._p['anonDb'])
-        if not dbInfo:
-            sys.exit('')
-        dbInfo = self._getDatabaseInfo(self._p['rawDb'])
-        if not dbInfo:
-            sys.exit('')
+        dbInfoRaw = getDatabaseInfo(self._p['rawDb'])
+        if not dbInfoRaw:
+            sys.exit('rawDb now found in database config')
+        if len(self._p['anonDb']) == 0:
+            self._p['anonDb'] = self._p['rawDb']
+        else:
+            dbInfoAnon = getDatabaseInfo(self._p['anonDb'])
+            if not dbInfoAnon:
+                sys.exit('anonDb not found in database config')
         if self._cr == 'linkability':
-            dbInfo = self._getDatabaseInfo(self._p['pubDb'])
+            dbInfo = getDatabaseInfo(self._p['pubDb'])
             if not dbInfo:
-                sys.exit('')
+                sys.exit('Must specify pubDb if criteria is linkability')
         numThreads = self._p['numRawDbThreads'] + self._p['numAnonDbThreads']
         if self._cr == 'linkability':
             numThreads += self._p['numPubDbThreads']
@@ -3520,16 +3518,16 @@ just hang.</p></div>
         self._atrs['attack']['criteria'] = self._p['criteria']
         self._atrs['attack']['table'] = self._p['table']
         # add parameters for the database machine itself
-        db = self._getDatabaseInfo(self._p['rawDb'])
+        db = getDatabaseInfo(self._p['rawDb'])
         self._atrs['attack']['rawHost'] = db['host']
         self._atrs['attack']['rawDbName'] = db['dbname']
         self._atrs['attack']['rawPort'] = db['port']
         if self._cr == 'linkability':
-            db = self._getDatabaseInfo(self._p['pubDb'])
+            db = getDatabaseInfo(self._p['pubDb'])
             self._atrs['attack']['pubHost'] = db['host']
             self._atrs['attack']['pubDbName'] = db['dbname']
             self._atrs['attack']['pubPort'] = db['port']
-        db = self._getDatabaseInfo(self._p['anonDb'])
+        db = getDatabaseInfo(self._p['anonDb'])
         self._atrs['attack']['anonHost'] = db['host']
         self._atrs['attack']['anonDbName'] = db['dbname']
         self._atrs['attack']['anonPort'] = db['port']
@@ -3615,13 +3613,14 @@ required parameters: <br/>
 <code>param['name']</code>: The name of the attack. Make it unique, because
 the cache is discovered using this name. <br/>
 <code>param['rawDb']</code>: The label for the DB to be used as the
-raw (non-anonymized) DB. From <code>param['dbConfig']</code>. <br/>
-<code>param['anonDb']</code>: The label for the DB to be used as the
-anonymized DB. <br/>
+raw (non-anonymized) DB. <br/>
+Following are the optional parameters: <br/>
 <code>param['criteria']</code>: The criteria by which the attack should
 determined to succeed or fail. Must be one of 'singlingOut',
-'inference', or 'linkability' <br/>
-Following are the optional parameters: <br/>
+'inference', or 'linkability'. Default is 'singlingOut'. <br/>
+<code>param['anonDb']</code>: The label for the DB to be used as the
+anonymized DB. (Is automatically set to <code>param['rawDb']</code> if
+not set.) <br/>
 <code>param['pubDb']</code>: The label for the DB to be used as the
 publicly known DB in linkability attacks. <br/>
 <code>param['table']</code>: The table to be attacked. Must be present
@@ -3640,8 +3639,6 @@ that can be made to the raw DB. Default 3. <br/>
 that can be made to the anon DB. Default 3. <br/>
 <code>param['numPubDbThreads']</code>: The number of parallel queries
 that can be made to the public linkability DB. Default 3. <br/>
-<code>param['dbConfig']</code>: The path to the json DB configuration
-file from the repo head directory. <br/>
 <code>param['verbose']</code>: Set to True for verbose output.</p></div>
   <div class="source_cont">
   <p class="source_link"><a href="javascript:void(0);" onclick="toggle('source-gdaScore.gdaAttack.__init__', this);">Show source &equiv;</a></p>
@@ -3653,13 +3650,14 @@ file from the repo head directory. <br/>
         `param['name']`: The name of the attack. Make it unique, because
         the cache is discovered using this name. <br/>
         `param['rawDb']`: The label for the DB to be used as the
-        raw (non-anonymized) DB. From `param['dbConfig']`. <br/>
-        `param['anonDb']`: The label for the DB to be used as the
-        anonymized DB. <br/>
+        raw (non-anonymized) DB. <br/>
+        Following are the optional parameters: <br/>
         `param['criteria']`: The criteria by which the attack should
         determined to succeed or fail. Must be one of 'singlingOut',
-        'inference', or 'linkability' <br/>
-        Following are the optional parameters: <br/>
+        'inference', or 'linkability'. Default is 'singlingOut'. <br/>
+        `param['anonDb']`: The label for the DB to be used as the
+        anonymized DB. (Is automatically set to `param['rawDb']` if
+        not set.) <br/>
         `param['pubDb']`: The label for the DB to be used as the
         publicly known DB in linkability attacks. <br/>
         `param['table']`: The table to be attacked. Must be present
@@ -3678,8 +3676,6 @@ file from the repo head directory. <br/>
         that can be made to the anon DB. Default 3. <br/>
         `param['numPubDbThreads']`: The number of parallel queries
         that can be made to the public linkability DB. Default 3. <br/>
-        `param['dbConfig']`: The path to the json DB configuration
-        file from the repo head directory. <br/>
         `param['verbose']`: Set to True for verbose output.
     """
     if self._vb: print(f"Calling {__name__}.init")
@@ -3734,7 +3730,7 @@ file from the repo head directory. <br/>
             
   <div class="item">
     <div class="name def" id="gdaScore.gdaAttack.askAttack">
-    <p>def <span class="ident">askAttack</span>(</p><p>self, query, cache=1)</p>
+    <p>def <span class="ident">askAttack</span>(</p><p>self, query, cache=True)</p>
     </div>
     
 
@@ -3746,7 +3742,7 @@ file from the repo head directory. <br/>
   <div class="source_cont">
   <p class="source_link"><a href="javascript:void(0);" onclick="toggle('source-gdaScore.gdaAttack.askAttack', this);">Show source &equiv;</a></p>
   <div id="source-gdaScore.gdaAttack.askAttack" class="source">
-    <pre><code>def askAttack(self,query,cache=1):
+    <pre><code>def askAttack(self,query,cache=True):
     """ Generate and queue up an attack query for database.
         `query` is a dictionary with (currently) one value: <br/>
         `query['sql'] contains the SQL query."""
@@ -3843,7 +3839,7 @@ Returns immediately</p></div>
             
   <div class="item">
     <div class="name def" id="gdaScore.gdaAttack.askExplore">
-    <p>def <span class="ident">askExplore</span>(</p><p>self, query, cache=0)</p>
+    <p>def <span class="ident">askExplore</span>(</p><p>self, query, cache=True)</p>
     </div>
     
 
@@ -3853,18 +3849,19 @@ Returns immediately</p></div>
 <p>No score book-keeping is done here. An analyst may make
 any number of queries without impacting the GDA score. <br/>
 <code>query</code> is a dictionary with two values: <br/>
-<code>query['sql'] contains the SQL query. &lt;br/&gt;</code>query['db'] determines which database is queried, and
+<code>query['sql']</code> contains the SQL query. <br/>
+<code>query['db']</code> determines which database is queried, and
 is one of 'rawDb', 'anonDb', or (if linkability), 'pubDb'.</p></div>
   <div class="source_cont">
   <p class="source_link"><a href="javascript:void(0);" onclick="toggle('source-gdaScore.gdaAttack.askExplore', this);">Show source &equiv;</a></p>
   <div id="source-gdaScore.gdaAttack.askExplore" class="source">
-    <pre><code>def askExplore(self,query,cache=0):
+    <pre><code>def askExplore(self,query,cache=True):
     """ Generate and queue up an exploritory query for database
         No score book-keeping is done here. An analyst may make
         any number of queries without impacting the GDA score. <br/>
         `query` is a dictionary with two values: <br/>
-        `query['sql'] contains the SQL query. <br/>
-        `query['db'] determines which database is queried, and
+        `query['sql']` contains the SQL query. <br/>
+        `query['db']` determines which database is queried, and
         is one of 'rawDb', 'anonDb', or (if linkability), 'pubDb'."""
     self._exploreCounter += 1
     if self._vb: print(f"Calling {__name__}.askExplore with "
@@ -3890,7 +3887,7 @@ is one of 'rawDb', 'anonDb', or (if linkability), 'pubDb'.</p></div>
             
   <div class="item">
     <div class="name def" id="gdaScore.gdaAttack.askKnowledge">
-    <p>def <span class="ident">askKnowledge</span>(</p><p>self, query, cache=0)</p>
+    <p>def <span class="ident">askKnowledge</span>(</p><p>self, query, cache=True)</p>
     </div>
     
 
@@ -3903,7 +3900,7 @@ Input parameters formatted the same as with <code>askAttack()</code></p></div>
   <div class="source_cont">
   <p class="source_link"><a href="javascript:void(0);" onclick="toggle('source-gdaScore.gdaAttack.askKnowledge', this);">Show source &equiv;</a></p>
   <div id="source-gdaScore.gdaAttack.askKnowledge" class="source">
-    <pre><code>def askKnowledge(self,query,cache=0):
+    <pre><code>def askKnowledge(self,query,cache=True):
     """ Generate and queue up a prior knowledge query for database
         The class keeps track of how many prior knowledge cells were
         returned and uses this to compute a score. <br/>
@@ -4247,7 +4244,7 @@ return format: [(col,type),(col,type),...]</p></div>
         # class init
         tableName = self._p['table']
     # Establish connection to database
-    db = self._getDatabaseInfo(self._p[dbType])
+    db = getDatabaseInfo(self._p[dbType])
     if db['type'] != 'postgres' and db['type'] != 'aircloak':
         print(f"DB type '{db['type']}' must be 'postgres' or 'aircloak'")
         return None
@@ -4429,7 +4426,7 @@ Must specify column name.</p></div>
         # class init
         tableName = self._p['table']
     # Establish connection to database
-    db = self._getDatabaseInfo(self._p['rawDb'])
+    db = getDatabaseInfo(self._p['rawDb'])
     connStr = str(f"host={db['host']} port={db['port']} dbname={db['dbname']} user={db['user']} password={db['password']}")
     conn = psycopg2.connect(connStr)
     cur = conn.cursor()
@@ -4448,7 +4445,7 @@ Must specify column name.</p></div>
                   from {tableName}
                   group by 1
                   order by 2 desc
-                  limit 100""")
+                  limit 200""")
     try:
         cur.execute(sql)
     except psycopg2.Error as e:
@@ -4458,8 +4455,8 @@ Must specify column name.</p></div>
     ret = []
     for row in ans:
         # row[0] is the value, row[1] is the count
-        if (((row[1]/numUid) > 0.01) and
-                (row[1] >= 100)):
+        if (((row[1]/numUid) > 0.002) and
+                (row[1] >= 50)):
             ret.append((row[0],row[1]))
     conn.close()
     return ret
@@ -4507,31 +4504,47 @@ Must specify column name.</p></div>
     
   
     <div class="desc"><p>Returns the full contents of the table characteristics</p>
-<p>Essentially a 'SELECT *' on the tab_char table <br/>
-Return value is a dict with structure: <br/></p>
-<pre><code>{ 'columnNames': [(name,type),...]
-  'table': [(col1,col2,col3,...),...]
+<p>Return value is a dict indexed by column name: <br/></p>
+<pre><code>{ '&lt;colName&gt;':
+    {
+        'av_rows_per_vals': 3.93149,
+        'av_uids_per_val': 0.468698,
+        'column_label': 'continuous',
+        'column_name': 'dropoff_latitude',
+        'column_type': 'real',
+        'max': '898.29382000000000',
+        'min': '-0.56333297000000',
+        'num_distinct_vals': 24216,
+        'num_rows': 95205,
+        'num_uids': 11350,
+        'std_rows_per_val': 10.8547,
+        'std_uids_per_val': 4.09688},
+    }
 }
-</code></pre>
-<p>Where: <br/>
-<code>columnNames</code> contains the names and types of the columns in
-order of <code>col1</code>, <code>col2</code>, ..., and <br/>
-<code>table</code> is the contents of the tab_char table</p></div>
+</code></pre></div>
   <div class="source_cont">
   <p class="source_link"><a href="javascript:void(0);" onclick="toggle('source-gdaScore.gdaAttack.getTableCharacteristics', this);">Show source &equiv;</a></p>
   <div id="source-gdaScore.gdaAttack.getTableCharacteristics" class="source">
     <pre><code>def getTableCharacteristics(self,tableName=''):
     """Returns the full contents of the table characteristics
     
-       Essentially a 'SELECT *' on the tab_char table <br/>
-       Return value is a dict with structure: <br/>
-           { 'columnNames': [(name,type),...]
-             'table': [(col1,col2,col3,...),...]
+       Return value is a dict indexed by column name: <br/>
+           { '<colName>':
+               {
+                   'av_rows_per_vals': 3.93149,
+                   'av_uids_per_val': 0.468698,
+                   'column_label': 'continuous',
+                   'column_name': 'dropoff_latitude',
+                   'column_type': 'real',
+                   'max': '898.29382000000000',
+                   'min': '-0.56333297000000',
+                   'num_distinct_vals': 24216,
+                   'num_rows': 95205,
+                   'num_uids': 11350,
+                   'std_rows_per_val': 10.8547,
+                   'std_uids_per_val': 4.09688},
+               }
            }
-       Where: <br/>
-       `columnNames` contains the names and types of the columns in
-       order of `col1`, `col2`, ..., and <br/>
-       `table` is the contents of the tab_char table
     """
     if len(tableName) == 0:
         # caller didn't supply a table name, so get it from the
@@ -4540,7 +4553,7 @@ order of <code>col1</code>, <code>col2</code>, ..., and <br/>
     # Modify table name to the default for the characteristics table
     tableName += '_char'
     # Establish connection to database
-    db = self._getDatabaseInfo(self._p['rawDb'])
+    db = getDatabaseInfo(self._p['rawDb'])
     connStr = str(f"host={db['host']} port={db['port']} dbname={db['dbname']} user={db['user']} password={db['password']}")
     conn = psycopg2.connect(connStr)
     cur = conn.cursor()
@@ -4555,8 +4568,11 @@ order of <code>col1</code>, <code>col2</code>, ..., and <br/>
     except psycopg2.Error as e:
         print(f"Error: getTableCharacteristics() query: '{e}'")
         self.cleanUp(cleanUpCache=False,doExit=True)
-    ans = cur.fetchall()
-    ret['columnNames'] = copy.deepcopy(ans)
+    cols = cur.fetchall()
+    # Make index for column name (should be 0, but just to be sure)
+    for colNameIndex in range(len(cols)):
+        if cols[colNameIndex][0] == 'column_name':
+            break
     # Query it for table contents
     sql = str(f"SELECT * FROM {tableName}")
     try:
@@ -4565,7 +4581,11 @@ order of <code>col1</code>, <code>col2</code>, ..., and <br/>
         print(f"Error: getTableCharacteristics() query: '{e}'")
         self.cleanUp(cleanUpCache=False,doExit=True)
     ans = cur.fetchall()
-    ret['table'] = copy.deepcopy(ans)
+    for row in ans:
+        colName = row[colNameIndex]
+        ret[colName] = {}
+        for i in range(len(row)):
+            ret[colName][cols[i][0]] = row[i]
     conn.close()
     return ret
 </code></pre>
@@ -4595,7 +4615,7 @@ Table names returned as list, unless error then return None</p></div>
     dbType is one of 'rawDb' or 'anonDb' <br/>
     Table names returned as list, unless error then return None"""
     # Establish connection to database
-    db = self._getDatabaseInfo(self._p[dbType])
+    db = getDatabaseInfo(self._p[dbType])
     if db['type'] != 'postgres' and db['type'] != 'aircloak':
         print(f"DB type '{db['type']}' must be 'postgres' or 'aircloak'")
         return None
