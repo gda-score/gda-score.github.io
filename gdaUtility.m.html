@@ -988,7 +988,6 @@ table {
     <li class="mono"><a href="#gdaUtility.gdaUtility.__init__">__init__</a></li>
     <li class="mono"><a href="#gdaUtility.gdaUtility.distinctUidUtilityMeasureSingleAndDoubleColumn">distinctUidUtilityMeasureSingleAndDoubleColumn</a></li>
     <li class="mono"><a href="#gdaUtility.gdaUtility.finishGdaUtility">finishGdaUtility</a></li>
-    <li class="mono"><a href="#gdaUtility.gdaUtility.setupGdaUtilityParameters">setupGdaUtilityParameters</a></li>
   </ul>
 
         </li>
@@ -1019,6 +1018,7 @@ import copy
 import random
 sys.path.append('../common')
 from gdaQuery import findQueryConditions
+from gdaUtilities import getDatabaseInfo
 
 #sys.path.append(os.path.abspath(r'../../code-master'))
 #from library.gdaScore import gdaAttack
@@ -1071,27 +1071,33 @@ class gdaUtility:
                     totalValCntAnonDb=None,
                     valuesInBothRawAndAnonDb=None))
 
-    def _getWorkingColumns(self,tabChar):
+    def _getWorkingColumns(self,tabChar,allowedColumns):
         # I'd like to work with a good mix of data types (numeric, datetime,
         # and text), i.e. targetCols. Also try to get a few with the most
         # distinct values because this gives us more flexibility
+        print("getWorkingCOlumns")
         targetCols = 8
         columns = []
         tuples = []
         # Start by putting the desired number of numeric columns in the list
+        pp.pprint(tabChar)
         for col in tabChar:
-            if ((tabChar[col]['column_type'] == "real") or
-                    ((tabChar[col]['column_type'][:3] == "int"))):
+            if (((tabChar[col]['column_type'] == "real") or
+                    ((tabChar[col]['column_type'][:3] == "int"))) and
+                    (col in allowedColumns)):
                 tuples.append([col,tabChar[col]['num_distinct_vals']])
         ordered = sorted(tuples, key=lambda t: t[1], reverse=True)
         for i in range(len(ordered)):
             if i >= targetCols:
                 break
             columns.append(ordered[i][0])
+            print(f"i is {i}")
+            print(columns)
         # Then datetime
         tuples = []
         for col in tabChar:
-            if tabChar[col]['column_type'][:4] == "date":
+            if (tabChar[col]['column_type'][:4] == "date" and
+                    col in allowedColumns):
                 tuples.append([col,tabChar[col]['num_distinct_vals']])
         ordered = sorted(tuples, key=lambda t: t[1], reverse=True)
         for i in range(len(ordered)):
@@ -1101,7 +1107,8 @@ class gdaUtility:
         # Then text
         tuples = []
         for col in tabChar:
-            if tabChar[col]['column_type'] == "text":
+            if (tabChar[col]['column_type'] == "text" and
+                    col in allowedColumns):
                 tuples.append([col,tabChar[col]['num_distinct_vals']])
         ordered = sorted(tuples, key=lambda t: t[1], reverse=True)
         for i in range(len(ordered)):
@@ -1151,17 +1158,21 @@ class gdaUtility:
         qs['ranges'] = sizes
         return qs
 
-    def _measureAccuracy(self,param,attack,tabChar,table,uid):
-        ranges = param['ranges']
-        numSamples = param['samples']
+    def _measureAccuracy(self,param,attack,tabChar,table,uid,allowedColumns):
+        ranges = param['basicConfig']['ranges']
+        numSamples = param['basicConfig']['samples']
         numColumns = [1,2]
-        columns = self._getWorkingColumns(tabChar)
+        columns = self._getWorkingColumns(tabChar,allowedColumns)
+        for col in columns:
+            if col in allowedColumns:
+                print(f"Column {col} should not be chosen ({allowedColumns})")
         queries = []
         for rang in ranges:
             for nc in numColumns:
                 cond = []
-                q = findQueryConditions(param, attack, columns,
+                q = findQueryConditions(param, attack, columns, allowedColumns,
                         rang[0], rang[1], numColumns=nc)
+                pp.pprint(q)
                 while(1):
                     res = q.getNextWhereClause()
                     if res is None:
@@ -1175,12 +1186,16 @@ class gdaUtility:
                 if self._p: print(f"Num queries = {len(queries)}")
         # Now go through and make queries for both raw and anon DBs, and
         # record the difference
+        anonDb = getDatabaseInfo(param['anonDb'])
         for query in queries:
             sql = str(f"SELECT count(DISTINCT {uid}) FROM {table} ")
-            sql += query['whereClauseRaw']
+            sql += query['whereClausePostgres']
             rawAns = self._doExplore(attack,"raw",sql)
             sql = str(f"SELECT count(DISTINCT {uid}) FROM {table} ")
-            sql += query['whereClauseAnon']
+            if anonDb['type'] == 'aircloak':
+                sql += query['whereClauseAircloak']
+            else:
+                sql += query['whereClausePostgres']
             anonAns = self._doExplore(attack,"anon",sql)
             query['raw'] = rawAns[0][0]
             query['anon'] = anonAns[0][0]
@@ -1249,7 +1264,7 @@ class gdaUtility:
             # evaluate coverage
             sql = "SELECT "
             sql += (colName)
-            if(param['measureParam']=="*"):
+            if(param['basicConfig']['measureParam']=="rows"):
                 sql += str(f", count(*) FROM {table} ")
             else:
                 sql += str(f", count( distinct {param['uid']}) FROM {table} ")
@@ -1267,22 +1282,30 @@ class gdaUtility:
             coverageScores.append(coverageEntry )
         return coverageScores
 
+    def _getAllowedColumns(self,coverageScores):
+        # This removes any columns with a coverage score of 0. Such columns
+        # either don't exist, or are all NULL. Either way, we can't measure
+        # their accuracy
+        allowedColumns = []
+        for cov in coverageScores:
+            if (cov['coverage']['coveragePerCol'] is None or
+                    cov['coverage']['coveragePerCol'] > 0.001):
+                # (I'm just a bit wary of true zero comparisons)
+                allowedColumns.append(cov['col1'])
+        return allowedColumns
+
     #Method to calculate Utility Measure
     def distinctUidUtilityMeasureSingleAndDoubleColumn(self,param):
-        """ Measures coverage and accuracy.
+        ''' Measures coverage and accuracy.
 
             `param` is a single data structure from the list of structures
-            returned by setupGdaUtilityParameters(). The contents of
-            `param` are read from the configuration file. The elements
-            of the configuration file are as follows:
+            returned by setupGdaAttackParameters().  The elements
+            of param as follows: <br/>
             `name`: The basis for the name of the output json file. Should
             be unique among all measures. <br/>
-            `rawDb`: The raw (non-anonymized) database used. <br/>
-            `anonDb`: The anonymized database to use.
+            `rawDb`: The raw (non-anonymized) database info. <br/>
+            `anonDb`: The anonymized database info. <br/>
             `table`: The name of the table in the database. <br/>
-            `anonType`: The type of anonymization (this appears in the
-            GDA Score diagram but does not otherwise affect operation). <br/>
-            `anonSubType`: Also appears in the GDA Score diagram. <br/>
             `uid`: The name of the uid column. <br/>
             `measureParam`: The thing that gets measured. Only current value
             is "uid", which indicates that counts of distinct uids should
@@ -1292,7 +1315,7 @@ class gdaUtility:
             `ranges`: A list of ranges. Each range specifies the lower and
             upper bound on the number of "things" that an answer should
             contain as specified by `measureParam`. <br/>
-        """
+        '''
         attack = gdaAttack(param)
         table = attack.getAttackTableName()
         uid = attack.getUidColName()
@@ -1304,8 +1327,12 @@ class gdaUtility:
         if self._p: pp.pprint(tabChar)
         coverageScores = self._measureCoverage(param,attack,tabChar,table,
                 rawColNames,anonColNames)
+        allowedColumns = self._getAllowedColumns(coverageScores)
+        pp.pprint(coverageScores)
+        pp.pprint(allowedColumns)
 
-        accuracyScores = self._measureAccuracy(param,attack,tabChar,table,uid)
+        accuracyScores = self._measureAccuracy(param,attack,tabChar,
+                table,uid,allowedColumns)
         self._ar['coverage']=coverageScores
         self._ar['accuracy']=accuracyScores
         self._ar['tableStats'] = tabChar
@@ -1325,11 +1352,18 @@ class gdaUtility:
         final['finished'] = True
         j = json.dumps(final, sort_keys=True, indent=4)
         resultsPath = params['resultsPath']
+
+        directory=os.path.dirname(resultsPath)
+        if not os.path.exists(directory):
+            e = str(f"Directory doesn't exists in the {resultsPath} to create a file. Create a directory")
+            sys.exit(e)
+
         try:
             f = open(resultsPath, 'w')
         except:
             e = str(f"Failed to open {resultsPath} for write")
             sys.exit(e)
+
         f.write(j)
         f.close()
         return final
@@ -1410,7 +1444,7 @@ class gdaUtility:
             absDict['stddev'] = None
         absDict['meanSquareError'] = absError
 
-        if (param['measureParam']) == "*":
+        if (param['basicConfig']['measureParam']) == "rows":
             absDict['compute'] = "(count((*)rawDb)-count((*)anonDb))"
         else:
             absDict['compute']="(count(distinct_rawDb)-count(distinct_anonDb))"
@@ -1426,7 +1460,7 @@ class gdaUtility:
         else:
             simpleRelDict['stddev'] = None
         simpleRelDict['meanSquareError'] = simpleRelError
-        if(param['measureParam'])=="*":
+        if(param['basicConfig']['measureParam'])=="rows":
             simpleRelDict['compute'] = "(count(rawDb(*))/count(anonDb(*)))"
         else:
             simpleRelDict['compute'] = "(count(distinct_rawDb)/count(distinct_anonDb))"
@@ -1443,7 +1477,7 @@ class gdaUtility:
             relDict['stddev'] = None
 
         relDict['meanSquareError'] = relError
-        if (param['measureParam']) == "*":
+        if (param['basicConfig']['measureParam']) == "rows":
             relDict[
                 'compute'] = "(abs(count((*)rawDb)-count((*)anonDb))/max(count((*)rawDb),count((*)anonDb)))"
         else:
@@ -1452,97 +1486,10 @@ class gdaUtility:
 
         return accuracy
 
-    def setupGdaUtilityParameters(self,cmdArgs):
-        """ Basic prep for input and output of running gdaUtility
-
-            `cmdArgs` is the command line args list (`sys.argv`) <br/>
-            `cmdArgs[1]` is either the name of the config file, or
-            empty if the default config file name should be used. <br/>
-            Returns a list of data structures that can be used for
-            class `gdaUtility` <br/>
-            Adds the following to the returned data structure (`par`) <br/>
-            `par['finished']`: `True` if attack previously completed.
-            Else `False` <br/>
-            `par['resultsPath']`: Path to filename where results should
-            be stored. <br/>
-        """
-
-        pp = pprint.PrettyPrinter(indent=4)
-        usageStr = str(f"""Usage: 
-            Either specify configuration file:
-                > {cmdArgs[0]} config.json
-            Or assume default configuration file '{cmdArgs[0]}.json':
-                > {cmdArgs[0]}
-            """)
-        if len(cmdArgs) == 1:
-            fileName = cmdArgs[0] + '.json'
-        elif len(cmdArgs) != 2:
-            sys.exit(usageStr)
-        else:
-            fileName = sys.argv[1]
-
-        try:
-            f = open(fileName, 'r')
-        except:
-            e = str(f"ERROR: file '{fileName}' not found.\n{usageStr}")
-            sys.exit(e)
-
-        pmList = json.load(f)
-        f.close()
-        for pm in pmList:
-            if 'criteria' not in pm or len(pm['criteria']) == 0:
-                pm['criteria'] = "singlingOut"
-            if 'verbose' in pm:
-                self._p = pm['verbose']
-            # The following prevents me from getting verbose output from
-            # all the queries to gdaScore(). Limits verbose output to just
-            # gdaUtility()
-            #pm['verbose'] = False
-
-            if 'name' not in pm or len(pm['name']) == 0:
-                baseName = str(f"{sys.argv[0]}")
-                if 'anonType' in pm and len(pm['anonType']) > 0:
-                    baseName += str(f".{pm['anonType']}")
-                if 'anonSubType' in pm and len(pm['anonSubType']) > 0:
-                    baseName += str(f".{pm['anonSubType']}")
-                if 'dbType' not in pm or len(pm['dbType']) == 0:
-                    baseName += str(f".{pm['rawDb']}.{pm['anonDb']}")
-                else:
-                    baseName += str(f".{pm['dbType']}")
-                if 'table' in pm and len(pm['table']) > 0:
-                    baseName += str(f".{pm['table']}")
-            else:
-                baseName = pm['name']
-            pm['name'] = baseName
-            if 'samples' not in pm:
-                pm['samples'] = 25
-            if 'ranges' not in pm:
-                pm['ranges'] = [[10,50],[50,100],[100,500],
-                        [500,1000],[1000,5000]]
-            resultsDir = "utilityResults";
-            if 'resultsDir' in pm and len(pm['resultsDir']) > 0:
-                resultsDir = pm['resultsDir']
-
-            resultsPath = resultsDir + "/" + baseName + "_out.json"
-            pm['resultsPath'] = resultsPath
-            pm['finished'] = False
-            try:
-                f = open(resultsPath, 'r')
-            except:
-                # No prior results for this utility measure have been posted
-                pass
-            else:
-                # Prior results have been posted. Make sure they are complete.
-                res = json.load(f)
-                if 'finished' in res:
-                    pm['finished'] = True
-
-        return pmList
-
     def _doExplore(self,attack,db,sql):
         query = dict(db=db, sql=sql)
         if self._p: print(sql)
-        print(sql)
+        print(sql)   
         attack.askExplore(query)
         reply = attack.getExplore()
         if 'answer' not in reply:
@@ -1600,27 +1547,33 @@ class gdaUtility:
                     totalValCntAnonDb=None,
                     valuesInBothRawAndAnonDb=None))
 
-    def _getWorkingColumns(self,tabChar):
+    def _getWorkingColumns(self,tabChar,allowedColumns):
         # I'd like to work with a good mix of data types (numeric, datetime,
         # and text), i.e. targetCols. Also try to get a few with the most
         # distinct values because this gives us more flexibility
+        print("getWorkingCOlumns")
         targetCols = 8
         columns = []
         tuples = []
         # Start by putting the desired number of numeric columns in the list
+        pp.pprint(tabChar)
         for col in tabChar:
-            if ((tabChar[col]['column_type'] == "real") or
-                    ((tabChar[col]['column_type'][:3] == "int"))):
+            if (((tabChar[col]['column_type'] == "real") or
+                    ((tabChar[col]['column_type'][:3] == "int"))) and
+                    (col in allowedColumns)):
                 tuples.append([col,tabChar[col]['num_distinct_vals']])
         ordered = sorted(tuples, key=lambda t: t[1], reverse=True)
         for i in range(len(ordered)):
             if i >= targetCols:
                 break
             columns.append(ordered[i][0])
+            print(f"i is {i}")
+            print(columns)
         # Then datetime
         tuples = []
         for col in tabChar:
-            if tabChar[col]['column_type'][:4] == "date":
+            if (tabChar[col]['column_type'][:4] == "date" and
+                    col in allowedColumns):
                 tuples.append([col,tabChar[col]['num_distinct_vals']])
         ordered = sorted(tuples, key=lambda t: t[1], reverse=True)
         for i in range(len(ordered)):
@@ -1630,7 +1583,8 @@ class gdaUtility:
         # Then text
         tuples = []
         for col in tabChar:
-            if tabChar[col]['column_type'] == "text":
+            if (tabChar[col]['column_type'] == "text" and
+                    col in allowedColumns):
                 tuples.append([col,tabChar[col]['num_distinct_vals']])
         ordered = sorted(tuples, key=lambda t: t[1], reverse=True)
         for i in range(len(ordered)):
@@ -1680,17 +1634,21 @@ class gdaUtility:
         qs['ranges'] = sizes
         return qs
 
-    def _measureAccuracy(self,param,attack,tabChar,table,uid):
-        ranges = param['ranges']
-        numSamples = param['samples']
+    def _measureAccuracy(self,param,attack,tabChar,table,uid,allowedColumns):
+        ranges = param['basicConfig']['ranges']
+        numSamples = param['basicConfig']['samples']
         numColumns = [1,2]
-        columns = self._getWorkingColumns(tabChar)
+        columns = self._getWorkingColumns(tabChar,allowedColumns)
+        for col in columns:
+            if col in allowedColumns:
+                print(f"Column {col} should not be chosen ({allowedColumns})")
         queries = []
         for rang in ranges:
             for nc in numColumns:
                 cond = []
-                q = findQueryConditions(param, attack, columns,
+                q = findQueryConditions(param, attack, columns, allowedColumns,
                         rang[0], rang[1], numColumns=nc)
+                pp.pprint(q)
                 while(1):
                     res = q.getNextWhereClause()
                     if res is None:
@@ -1704,12 +1662,16 @@ class gdaUtility:
                 if self._p: print(f"Num queries = {len(queries)}")
         # Now go through and make queries for both raw and anon DBs, and
         # record the difference
+        anonDb = getDatabaseInfo(param['anonDb'])
         for query in queries:
             sql = str(f"SELECT count(DISTINCT {uid}) FROM {table} ")
-            sql += query['whereClauseRaw']
+            sql += query['whereClausePostgres']
             rawAns = self._doExplore(attack,"raw",sql)
             sql = str(f"SELECT count(DISTINCT {uid}) FROM {table} ")
-            sql += query['whereClauseAnon']
+            if anonDb['type'] == 'aircloak':
+                sql += query['whereClauseAircloak']
+            else:
+                sql += query['whereClausePostgres']
             anonAns = self._doExplore(attack,"anon",sql)
             query['raw'] = rawAns[0][0]
             query['anon'] = anonAns[0][0]
@@ -1778,7 +1740,7 @@ class gdaUtility:
             # evaluate coverage
             sql = "SELECT "
             sql += (colName)
-            if(param['measureParam']=="*"):
+            if(param['basicConfig']['measureParam']=="rows"):
                 sql += str(f", count(*) FROM {table} ")
             else:
                 sql += str(f", count( distinct {param['uid']}) FROM {table} ")
@@ -1796,22 +1758,30 @@ class gdaUtility:
             coverageScores.append(coverageEntry )
         return coverageScores
 
+    def _getAllowedColumns(self,coverageScores):
+        # This removes any columns with a coverage score of 0. Such columns
+        # either don't exist, or are all NULL. Either way, we can't measure
+        # their accuracy
+        allowedColumns = []
+        for cov in coverageScores:
+            if (cov['coverage']['coveragePerCol'] is None or
+                    cov['coverage']['coveragePerCol'] > 0.001):
+                # (I'm just a bit wary of true zero comparisons)
+                allowedColumns.append(cov['col1'])
+        return allowedColumns
+
     #Method to calculate Utility Measure
     def distinctUidUtilityMeasureSingleAndDoubleColumn(self,param):
-        """ Measures coverage and accuracy.
+        ''' Measures coverage and accuracy.
 
             `param` is a single data structure from the list of structures
-            returned by setupGdaUtilityParameters(). The contents of
-            `param` are read from the configuration file. The elements
-            of the configuration file are as follows:
+            returned by setupGdaAttackParameters().  The elements
+            of param as follows: <br/>
             `name`: The basis for the name of the output json file. Should
             be unique among all measures. <br/>
-            `rawDb`: The raw (non-anonymized) database used. <br/>
-            `anonDb`: The anonymized database to use.
+            `rawDb`: The raw (non-anonymized) database info. <br/>
+            `anonDb`: The anonymized database info. <br/>
             `table`: The name of the table in the database. <br/>
-            `anonType`: The type of anonymization (this appears in the
-            GDA Score diagram but does not otherwise affect operation). <br/>
-            `anonSubType`: Also appears in the GDA Score diagram. <br/>
             `uid`: The name of the uid column. <br/>
             `measureParam`: The thing that gets measured. Only current value
             is "uid", which indicates that counts of distinct uids should
@@ -1821,7 +1791,7 @@ class gdaUtility:
             `ranges`: A list of ranges. Each range specifies the lower and
             upper bound on the number of "things" that an answer should
             contain as specified by `measureParam`. <br/>
-        """
+        '''
         attack = gdaAttack(param)
         table = attack.getAttackTableName()
         uid = attack.getUidColName()
@@ -1833,8 +1803,12 @@ class gdaUtility:
         if self._p: pp.pprint(tabChar)
         coverageScores = self._measureCoverage(param,attack,tabChar,table,
                 rawColNames,anonColNames)
+        allowedColumns = self._getAllowedColumns(coverageScores)
+        pp.pprint(coverageScores)
+        pp.pprint(allowedColumns)
 
-        accuracyScores = self._measureAccuracy(param,attack,tabChar,table,uid)
+        accuracyScores = self._measureAccuracy(param,attack,tabChar,
+                table,uid,allowedColumns)
         self._ar['coverage']=coverageScores
         self._ar['accuracy']=accuracyScores
         self._ar['tableStats'] = tabChar
@@ -1854,11 +1828,18 @@ class gdaUtility:
         final['finished'] = True
         j = json.dumps(final, sort_keys=True, indent=4)
         resultsPath = params['resultsPath']
+
+        directory=os.path.dirname(resultsPath)
+        if not os.path.exists(directory):
+            e = str(f"Directory doesn't exists in the {resultsPath} to create a file. Create a directory")
+            sys.exit(e)
+
         try:
             f = open(resultsPath, 'w')
         except:
             e = str(f"Failed to open {resultsPath} for write")
             sys.exit(e)
+
         f.write(j)
         f.close()
         return final
@@ -1939,7 +1920,7 @@ class gdaUtility:
             absDict['stddev'] = None
         absDict['meanSquareError'] = absError
 
-        if (param['measureParam']) == "*":
+        if (param['basicConfig']['measureParam']) == "rows":
             absDict['compute'] = "(count((*)rawDb)-count((*)anonDb))"
         else:
             absDict['compute']="(count(distinct_rawDb)-count(distinct_anonDb))"
@@ -1955,7 +1936,7 @@ class gdaUtility:
         else:
             simpleRelDict['stddev'] = None
         simpleRelDict['meanSquareError'] = simpleRelError
-        if(param['measureParam'])=="*":
+        if(param['basicConfig']['measureParam'])=="rows":
             simpleRelDict['compute'] = "(count(rawDb(*))/count(anonDb(*)))"
         else:
             simpleRelDict['compute'] = "(count(distinct_rawDb)/count(distinct_anonDb))"
@@ -1972,7 +1953,7 @@ class gdaUtility:
             relDict['stddev'] = None
 
         relDict['meanSquareError'] = relError
-        if (param['measureParam']) == "*":
+        if (param['basicConfig']['measureParam']) == "rows":
             relDict[
                 'compute'] = "(abs(count((*)rawDb)-count((*)anonDb))/max(count((*)rawDb),count((*)anonDb)))"
         else:
@@ -1981,97 +1962,10 @@ class gdaUtility:
 
         return accuracy
 
-    def setupGdaUtilityParameters(self,cmdArgs):
-        """ Basic prep for input and output of running gdaUtility
-
-            `cmdArgs` is the command line args list (`sys.argv`) <br/>
-            `cmdArgs[1]` is either the name of the config file, or
-            empty if the default config file name should be used. <br/>
-            Returns a list of data structures that can be used for
-            class `gdaUtility` <br/>
-            Adds the following to the returned data structure (`par`) <br/>
-            `par['finished']`: `True` if attack previously completed.
-            Else `False` <br/>
-            `par['resultsPath']`: Path to filename where results should
-            be stored. <br/>
-        """
-
-        pp = pprint.PrettyPrinter(indent=4)
-        usageStr = str(f"""Usage: 
-            Either specify configuration file:
-                > {cmdArgs[0]} config.json
-            Or assume default configuration file '{cmdArgs[0]}.json':
-                > {cmdArgs[0]}
-            """)
-        if len(cmdArgs) == 1:
-            fileName = cmdArgs[0] + '.json'
-        elif len(cmdArgs) != 2:
-            sys.exit(usageStr)
-        else:
-            fileName = sys.argv[1]
-
-        try:
-            f = open(fileName, 'r')
-        except:
-            e = str(f"ERROR: file '{fileName}' not found.\n{usageStr}")
-            sys.exit(e)
-
-        pmList = json.load(f)
-        f.close()
-        for pm in pmList:
-            if 'criteria' not in pm or len(pm['criteria']) == 0:
-                pm['criteria'] = "singlingOut"
-            if 'verbose' in pm:
-                self._p = pm['verbose']
-            # The following prevents me from getting verbose output from
-            # all the queries to gdaScore(). Limits verbose output to just
-            # gdaUtility()
-            #pm['verbose'] = False
-
-            if 'name' not in pm or len(pm['name']) == 0:
-                baseName = str(f"{sys.argv[0]}")
-                if 'anonType' in pm and len(pm['anonType']) > 0:
-                    baseName += str(f".{pm['anonType']}")
-                if 'anonSubType' in pm and len(pm['anonSubType']) > 0:
-                    baseName += str(f".{pm['anonSubType']}")
-                if 'dbType' not in pm or len(pm['dbType']) == 0:
-                    baseName += str(f".{pm['rawDb']}.{pm['anonDb']}")
-                else:
-                    baseName += str(f".{pm['dbType']}")
-                if 'table' in pm and len(pm['table']) > 0:
-                    baseName += str(f".{pm['table']}")
-            else:
-                baseName = pm['name']
-            pm['name'] = baseName
-            if 'samples' not in pm:
-                pm['samples'] = 25
-            if 'ranges' not in pm:
-                pm['ranges'] = [[10,50],[50,100],[100,500],
-                        [500,1000],[1000,5000]]
-            resultsDir = "utilityResults";
-            if 'resultsDir' in pm and len(pm['resultsDir']) > 0:
-                resultsDir = pm['resultsDir']
-
-            resultsPath = resultsDir + "/" + baseName + "_out.json"
-            pm['resultsPath'] = resultsPath
-            pm['finished'] = False
-            try:
-                f = open(resultsPath, 'r')
-            except:
-                # No prior results for this utility measure have been posted
-                pass
-            else:
-                # Prior results have been posted. Make sure they are complete.
-                res = json.load(f)
-                if 'finished' in res:
-                    pm['finished'] = True
-
-        return pmList
-
     def _doExplore(self,attack,db,sql):
         query = dict(db=db, sql=sql)
         if self._p: print(sql)
-        print(sql)
+        print(sql)   
         attack.askExplore(query)
         reply = attack.getExplore()
         if 'answer' not in reply:
@@ -2145,17 +2039,13 @@ Currently limited to simple count of distinct users.</p></div>
   
     <div class="desc"><p>Measures coverage and accuracy.</p>
 <p><code>param</code> is a single data structure from the list of structures
-returned by setupGdaUtilityParameters(). The contents of
-<code>param</code> are read from the configuration file. The elements
-of the configuration file are as follows:
+returned by setupGdaAttackParameters().  The elements
+of param as follows: <br/>
 <code>name</code>: The basis for the name of the output json file. Should
 be unique among all measures. <br/>
-<code>rawDb</code>: The raw (non-anonymized) database used. <br/>
-<code>anonDb</code>: The anonymized database to use.
+<code>rawDb</code>: The raw (non-anonymized) database info. <br/>
+<code>anonDb</code>: The anonymized database info. <br/>
 <code>table</code>: The name of the table in the database. <br/>
-<code>anonType</code>: The type of anonymization (this appears in the
-GDA Score diagram but does not otherwise affect operation). <br/>
-<code>anonSubType</code>: Also appears in the GDA Score diagram. <br/>
 <code>uid</code>: The name of the uid column. <br/>
 <code>measureParam</code>: The thing that gets measured. Only current value
 is "uid", which indicates that counts of distinct uids should
@@ -2169,19 +2059,15 @@ contain as specified by <code>measureParam</code>. <br/></p></div>
   <p class="source_link"><a href="javascript:void(0);" onclick="toggle('source-gdaUtility.gdaUtility.distinctUidUtilityMeasureSingleAndDoubleColumn', this);">Show source &equiv;</a></p>
   <div id="source-gdaUtility.gdaUtility.distinctUidUtilityMeasureSingleAndDoubleColumn" class="source">
     <pre><code>def distinctUidUtilityMeasureSingleAndDoubleColumn(self,param):
-    """ Measures coverage and accuracy.
+    ''' Measures coverage and accuracy.
         `param` is a single data structure from the list of structures
-        returned by setupGdaUtilityParameters(). The contents of
-        `param` are read from the configuration file. The elements
-        of the configuration file are as follows:
+        returned by setupGdaAttackParameters().  The elements
+        of param as follows: <br/>
         `name`: The basis for the name of the output json file. Should
         be unique among all measures. <br/>
-        `rawDb`: The raw (non-anonymized) database used. <br/>
-        `anonDb`: The anonymized database to use.
+        `rawDb`: The raw (non-anonymized) database info. <br/>
+        `anonDb`: The anonymized database info. <br/>
         `table`: The name of the table in the database. <br/>
-        `anonType`: The type of anonymization (this appears in the
-        GDA Score diagram but does not otherwise affect operation). <br/>
-        `anonSubType`: Also appears in the GDA Score diagram. <br/>
         `uid`: The name of the uid column. <br/>
         `measureParam`: The thing that gets measured. Only current value
         is "uid", which indicates that counts of distinct uids should
@@ -2191,7 +2077,7 @@ contain as specified by <code>measureParam</code>. <br/></p></div>
         `ranges`: A list of ranges. Each range specifies the lower and
         upper bound on the number of "things" that an answer should
         contain as specified by `measureParam`. <br/>
-    """
+    '''
     attack = gdaAttack(param)
     table = attack.getAttackTableName()
     uid = attack.getUidColName()
@@ -2203,7 +2089,11 @@ contain as specified by <code>measureParam</code>. <br/></p></div>
     if self._p: pp.pprint(tabChar)
     coverageScores = self._measureCoverage(param,attack,tabChar,table,
             rawColNames,anonColNames)
-    accuracyScores = self._measureAccuracy(param,attack,tabChar,table,uid)
+    allowedColumns = self._getAllowedColumns(coverageScores)
+    pp.pprint(coverageScores)
+    pp.pprint(allowedColumns)
+    accuracyScores = self._measureAccuracy(param,attack,tabChar,
+            table,uid,allowedColumns)
     self._ar['coverage']=coverageScores
     self._ar['accuracy']=accuracyScores
     self._ar['tableStats'] = tabChar
@@ -2240,6 +2130,10 @@ contain as specified by <code>measureParam</code>. <br/></p></div>
     final['finished'] = True
     j = json.dumps(final, sort_keys=True, indent=4)
     resultsPath = params['resultsPath']
+    directory=os.path.dirname(resultsPath)
+    if not os.path.exists(directory):
+        e = str(f"Directory doesn't exists in the {resultsPath} to create a file. Create a directory")
+        sys.exit(e)
     try:
         f = open(resultsPath, 'w')
     except:
@@ -2248,114 +2142,6 @@ contain as specified by <code>measureParam</code>. <br/></p></div>
     f.write(j)
     f.close()
     return final
-</code></pre>
-  </div>
-</div>
-
-  </div>
-  
-            
-  <div class="item">
-    <div class="name def" id="gdaUtility.gdaUtility.setupGdaUtilityParameters">
-    <p>def <span class="ident">setupGdaUtilityParameters</span>(</p><p>self, cmdArgs)</p>
-    </div>
-    
-
-    
-  
-    <div class="desc"><p>Basic prep for input and output of running gdaUtility</p>
-<p><code>cmdArgs</code> is the command line args list (<code>sys.argv</code>) <br/>
-<code>cmdArgs[1]</code> is either the name of the config file, or
-empty if the default config file name should be used. <br/>
-Returns a list of data structures that can be used for
-class <code>gdaUtility</code> <br/>
-Adds the following to the returned data structure (<code>par</code>) <br/>
-<code>par['finished']</code>: <code>True</code> if attack previously completed.
-Else <code>False</code> <br/>
-<code>par['resultsPath']</code>: Path to filename where results should
-be stored. <br/></p></div>
-  <div class="source_cont">
-  <p class="source_link"><a href="javascript:void(0);" onclick="toggle('source-gdaUtility.gdaUtility.setupGdaUtilityParameters', this);">Show source &equiv;</a></p>
-  <div id="source-gdaUtility.gdaUtility.setupGdaUtilityParameters" class="source">
-    <pre><code>def setupGdaUtilityParameters(self,cmdArgs):
-    """ Basic prep for input and output of running gdaUtility
-        `cmdArgs` is the command line args list (`sys.argv`) <br/>
-        `cmdArgs[1]` is either the name of the config file, or
-        empty if the default config file name should be used. <br/>
-        Returns a list of data structures that can be used for
-        class `gdaUtility` <br/>
-        Adds the following to the returned data structure (`par`) <br/>
-        `par['finished']`: `True` if attack previously completed.
-        Else `False` <br/>
-        `par['resultsPath']`: Path to filename where results should
-        be stored. <br/>
-    """
-    pp = pprint.PrettyPrinter(indent=4)
-    usageStr = str(f"""Usage: 
-        Either specify configuration file:
-            > {cmdArgs[0]} config.json
-        Or assume default configuration file '{cmdArgs[0]}.json':
-            > {cmdArgs[0]}
-        """)
-    if len(cmdArgs) == 1:
-        fileName = cmdArgs[0] + '.json'
-    elif len(cmdArgs) != 2:
-        sys.exit(usageStr)
-    else:
-        fileName = sys.argv[1]
-    try:
-        f = open(fileName, 'r')
-    except:
-        e = str(f"ERROR: file '{fileName}' not found.\n{usageStr}")
-        sys.exit(e)
-    pmList = json.load(f)
-    f.close()
-    for pm in pmList:
-        if 'criteria' not in pm or len(pm['criteria']) == 0:
-            pm['criteria'] = "singlingOut"
-        if 'verbose' in pm:
-            self._p = pm['verbose']
-        # The following prevents me from getting verbose output from
-        # all the queries to gdaScore(). Limits verbose output to just
-        # gdaUtility()
-        #pm['verbose'] = False
-        if 'name' not in pm or len(pm['name']) == 0:
-            baseName = str(f"{sys.argv[0]}")
-            if 'anonType' in pm and len(pm['anonType']) > 0:
-                baseName += str(f".{pm['anonType']}")
-            if 'anonSubType' in pm and len(pm['anonSubType']) > 0:
-                baseName += str(f".{pm['anonSubType']}")
-            if 'dbType' not in pm or len(pm['dbType']) == 0:
-                baseName += str(f".{pm['rawDb']}.{pm['anonDb']}")
-            else:
-                baseName += str(f".{pm['dbType']}")
-            if 'table' in pm and len(pm['table']) > 0:
-                baseName += str(f".{pm['table']}")
-        else:
-            baseName = pm['name']
-        pm['name'] = baseName
-        if 'samples' not in pm:
-            pm['samples'] = 25
-        if 'ranges' not in pm:
-            pm['ranges'] = [[10,50],[50,100],[100,500],
-                    [500,1000],[1000,5000]]
-        resultsDir = "utilityResults";
-        if 'resultsDir' in pm and len(pm['resultsDir']) > 0:
-            resultsDir = pm['resultsDir']
-        resultsPath = resultsDir + "/" + baseName + "_out.json"
-        pm['resultsPath'] = resultsPath
-        pm['finished'] = False
-        try:
-            f = open(resultsPath, 'r')
-        except:
-            # No prior results for this utility measure have been posted
-            pass
-        else:
-            # Prior results have been posted. Make sure they are complete.
-            res = json.load(f)
-            if 'finished' in res:
-                pm['finished'] = True
-    return pmList
 </code></pre>
   </div>
 </div>
