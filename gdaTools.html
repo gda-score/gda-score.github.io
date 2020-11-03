@@ -131,6 +131,10 @@ def getDatabaseInfo(theDb):
             logging.critical(&#34;GDA_SCORE_DIFFIX_USER and GDA_SCORE_DIFFIX_PASS must be set as &#34;
                      &#34;environment variables for working with Aircloak database. see README.md&#34;)
             sys.exit(0)
+    elif theDb[&#39;type&#39;] == &#34;uber_dp&#34;:
+        # uber_dp interface does not need a password or a username
+        theDb[&#39;password&#39;] = &#34;not_needed&#34;
+        theDb[&#39;user&#39;] = &#34;not_needed&#34;
     ### &lt;/NEW WAY&gt; ###
 
     return theDb
